@@ -28,13 +28,13 @@ public class AiExceptionHandler {
 
     @ExceptionHandler(PdfTextExtractor.InvalidPdfException.class)
     public ResponseEntity<Map<String, String>> handleInvalidPdf(PdfTextExtractor.InvalidPdfException exception) {
-        return error(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
+        return error(HttpStatus.UNPROCESSABLE_CONTENT, exception.getMessage());
     }
 
     @ExceptionHandler(PdfTextExtractor.NoExtractableTextException.class)
     public ResponseEntity<Map<String, String>> handleNoExtractableText(
             PdfTextExtractor.NoExtractableTextException exception) {
-        return error(HttpStatus.UNPROCESSABLE_ENTITY, exception.getMessage());
+        return error(HttpStatus.UNPROCESSABLE_CONTENT, exception.getMessage());
     }
 
     @ExceptionHandler(PdfTextExtractor.PdfTextTooLargeException.class)

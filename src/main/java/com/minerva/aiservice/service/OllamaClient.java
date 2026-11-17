@@ -49,12 +49,25 @@ public class OllamaClient {
     }
 
     public <T> T generateJson(String systemPrompt, String userPrompt, Class<T> responseType) {
+        String content = generateContent(systemPrompt, userPrompt, "json");
+        try {
+            return objectMapper.readValue(content, responseType);
+        } catch (JacksonException exception) {
+            throw new InvalidModelResponseException("Ollama returned invalid JSON.", exception);
+        }
+    }
+
+    public String generateStructured(String systemPrompt, String userPrompt, Map<String, Object> schema) {
+        return generateContent(systemPrompt, userPrompt, schema);
+    }
+
+    private String generateContent(String systemPrompt, String userPrompt, Object format) {
         Map<String, Object> request = Map.of(
                 "model", properties.ollama().model(),
                 "messages", List.of(
                     Map.of("role", "system", "content", systemPrompt),
                     Map.of("role", "user", "content", userPrompt)),
-                "format", "json",
+                "format", format,
                 "stream", false,
                 "think", false);
 
@@ -72,11 +85,7 @@ public class OllamaClient {
         if (response == null || response.message() == null || response.message().content() == null) {
             throw new InvalidModelResponseException("Ollama returned an empty chat response.");
         }
-        try {
-            return objectMapper.readValue(response.message().content(), responseType);
-        } catch (JacksonException exception) {
-            throw new InvalidModelResponseException("Ollama returned invalid JSON.", exception);
-        }
+        return response.message().content();
     }
 
     private record OllamaTagsResponse(List<OllamaModel> models) {

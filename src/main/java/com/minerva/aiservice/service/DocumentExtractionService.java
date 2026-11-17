@@ -1,6 +1,7 @@
 package com.minerva.aiservice.service;
 
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.minerva.aiservice.dto.DocumentExtractionResponse;
 
@@ -15,7 +16,7 @@ public class DocumentExtractionService {
     private final OllamaClient ollamaClient;
     private final Validator validator;
 
-    public DocumentExtractionResponse extract(byte[] pdfContent) {
+    public DocumentExtractionResponse extract(MultipartFile pdfContent) {
         String text = pdfTextExtractor.extract(pdfContent);
         String systemPrompt = """
                 Desglosa el texto fuente en una jerarquía académica de unidad, tema y concepto.
