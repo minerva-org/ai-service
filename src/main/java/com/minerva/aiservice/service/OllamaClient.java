@@ -3,6 +3,7 @@ package com.minerva.aiservice.service;
 import java.util.List;
 import java.util.Map;
 import java.net.http.HttpClient;
+import java.net.http.HttpTimeoutException;
 
 import org.springframework.stereotype.Service;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -44,6 +45,9 @@ public class OllamaClient {
                     && response.models() != null
                     && response.models().stream().anyMatch(model -> properties.ollama().model().equals(model.name()));
         } catch (RestClientException exception) {
+            if (hasTimeoutCause(exception)) {
+                throw new OllamaTimeoutException(exception);
+            }
             throw new OllamaUnavailableException(exception);
         }
     }
@@ -88,6 +92,18 @@ public class OllamaClient {
         return response.message().content();
     }
 
+    private boolean hasTimeoutCause(Throwable cause) {
+        Throwable current = cause;
+        while (current != null) {
+            if (current instanceof HttpTimeoutException
+                    || current.getClass().getSimpleName().contains("Timeout")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
     private record OllamaTagsResponse(List<OllamaModel> models) {
     }
 
@@ -103,6 +119,12 @@ public class OllamaClient {
     public static class OllamaUnavailableException extends RuntimeException {
         public OllamaUnavailableException(Throwable cause) {
             super("Ollama is unavailable.", cause);
+        }
+    }
+
+    public static class OllamaTimeoutException extends RuntimeException {
+        public OllamaTimeoutException(Throwable cause) {
+            super("Ollama request timed out.", cause);
         }
     }
 

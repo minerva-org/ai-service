@@ -6,7 +6,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 
-public record DocumentExtractionResponse(@NotEmpty List<@Valid UnitDTO> units) {
+public record DocumentExtractionResponse(List<@Valid UnitDTO> units) {
 
     public record UnitDTO(@NotBlank String name, @NotEmpty List<@Valid TopicDTO> topics) {
     }

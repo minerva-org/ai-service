@@ -43,6 +43,22 @@ class PdfTextExtractorTest {
         }
     }
 
+    // Input: PDF válido sin texto seleccionable.
+    // Resultado esperado: NoExtractableTextException con mensaje de OCR no soportado.
+    @Test
+    void rejectsPdfWithoutSelectableText() throws Exception {
+        try (PDDocument pdf = new PDDocument(); var bytes = new ByteArrayOutputStream()) {
+            pdf.addPage(new PDPage());
+            pdf.save(bytes);
+
+            var error = assertThrows(PdfTextExtractor.NoExtractableTextException.class,
+                    () -> extractor.extract(new MockMultipartFile(
+                            "file", "sin-texto.pdf", "application/pdf", bytes.toByteArray())));
+
+            assertTrue(error.getMessage().contains("OCR"));
+        }
+    }
+
     @Test
     void enforcesTenMiBBoundaryWithoutReadingOversizedUpload() throws Exception {
         MultipartFile file = mock(MultipartFile.class);
