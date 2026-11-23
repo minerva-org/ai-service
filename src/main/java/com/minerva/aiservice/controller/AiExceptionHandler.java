@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import com.minerva.aiservice.service.OllamaClient;
 import com.minerva.aiservice.service.PdfTextExtractor;
 import com.minerva.aiservice.service.DocumentExtractionService;
+import com.minerva.aiservice.service.CurriculumGenerationService;
 
 @RestControllerAdvice
 public class AiExceptionHandler {
@@ -93,6 +94,44 @@ public class AiExceptionHandler {
                 "INCOMPLETE_HIERARCHY",
                 "La jerarquia extraida esta incompleta.",
                 exception.getValidationErrors());
+    }
+
+    @ExceptionHandler(CurriculumGenerationService.InvalidCurriculumTreeException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidCurriculumTree(
+            CurriculumGenerationService.InvalidCurriculumTreeException exception) {
+        LOGGER.log(Level.INFO,
+                "AI_SERVICE_INVALID_CURRICULUM_TREE: " + exception.getMessage());
+        if (exception.getValidationErrors().isEmpty()) {
+            return error(HttpStatus.UNPROCESSABLE_CONTENT,
+                    "INVALID_CURRICULUM_TREE",
+                    exception.getMessage());
+        }
+        return errorWithValidation(
+                HttpStatus.UNPROCESSABLE_CONTENT,
+                "INVALID_CURRICULUM_TREE",
+                exception.getMessage(),
+                exception.getValidationErrors());
+    }
+
+    @ExceptionHandler(CurriculumGenerationService.InvalidCurriculumOutputException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidCurriculumOutput(
+            CurriculumGenerationService.InvalidCurriculumOutputException exception) {
+        LOGGER.log(Level.WARNING,
+                "AI_SERVICE_INVALID_CURRICULUM_OUTPUT: " + exception.getMessage());
+        return errorWithValidation(
+                HttpStatus.BAD_GATEWAY,
+                "INVALID_CURRICULUM_OUTPUT",
+                exception.getMessage(),
+                exception.getValidationErrors());
+    }
+
+    @ExceptionHandler(CurriculumGenerationService.NoRelevantCurriculumException.class)
+    public ResponseEntity<Map<String, Object>> handleNoRelevantCurriculum(
+            CurriculumGenerationService.NoRelevantCurriculumException exception) {
+        LOGGER.log(Level.INFO, "AI_SERVICE_NO_RELEVANT_CURRICULUM");
+        return error(HttpStatus.UNPROCESSABLE_CONTENT,
+                "SIN_INFORMACION_RELEVANTE",
+                exception.getMessage());
     }
 
     private static ResponseEntity<Map<String, Object>> error(

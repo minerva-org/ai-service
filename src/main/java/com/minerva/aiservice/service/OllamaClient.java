@@ -83,6 +83,9 @@ public class OllamaClient {
                     .retrieve()
                     .body(OllamaChatResponse.class);
         } catch (RestClientException exception) {
+            if (hasTimeoutCause(exception)) {
+                throw new OllamaTimeoutException(exception);
+            }
             throw new OllamaUnavailableException(exception);
         }
 
