@@ -22,9 +22,11 @@ import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import org.springframework.context.annotation.Primary;
 
 @Service
 @ConditionalOnProperty(name = "ai.provider", havingValue = "claude")
+@Primary
 public class ClaudeClient implements AiModelClient {
     private static final Logger LOGGER =
             Logger.getLogger(ClaudeClient.class.getName());

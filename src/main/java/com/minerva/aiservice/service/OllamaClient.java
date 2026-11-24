@@ -17,7 +17,6 @@ import com.minerva.aiservice.config.AiServiceProperties;
 
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
-
 @Service
 public class OllamaClient implements AiModelClient {
 
