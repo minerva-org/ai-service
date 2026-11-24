@@ -181,9 +181,10 @@ public class CurriculumGenerationService {
         JsonNode generatedTree;
         try {
             progress.accept("Validando la respuesta del modelo");
+            String normalizedRaw = normalizeModelCharacters(raw);
             generatedTree = objectMapper.reader()
                     .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-                    .readTree(raw);
+                    .readTree(normalizedRaw);
             normalizeNodeKeys(generatedTree);
         } catch (JacksonException exception) {
             LOGGER.log(Level.WARNING,
@@ -318,6 +319,16 @@ public class CurriculumGenerationService {
                 - No conviertas el nombre de la materia en una unidad, tema o concepto.
                 - Materia solo puede aparecer una vez como raiz y debe conservar el nombre recibido.
                 - No infieras una unidad, tema o concepto nuevo solo porque repita el nombre de la materia.
+                - Obligatoriedad estricta de claves: usa exclusivamente comillas dobles ASCII
+                  para delimitar todas las claves y todos los valores de texto.
+                - Nunca uses comillas simples, claves con ? al final, claves con espacios,
+                  ni nombres de campo terminados con apostrofes.
+                - Cada nodo debe contener "tipo", "nombre", "contenido" y "hijos".
+                - "contenido" debe ser siempre una lista de objetos.
+                - "hijos" debe ser siempre una lista de objetos.
+                - Los nodos existentes deben conservar exactamente su "id", "tipo" y "nombre".
+                - No inventes un "id" para nodos existentes.
+                - No devuelvas texto antes o despues del objeto JSON.
                 - No inventes informacion no presente en las fuentes.
                 - Agrega solo informacion curricular relevante.
                 - Para conceptos existentes que tengan informacion verificable en las fuentes,
@@ -367,6 +378,34 @@ public class CurriculumGenerationService {
                 """;
     }
 
+    private static String normalizeModelCharacters(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String normalized = raw
+                .replace('\u2018', '"')
+                .replace('\u2019', '"')
+                .replace('\u201C', '"')
+                .replace('\u201D', '"')
+                .replace('\u00A0', ' ')
+                .replace(" ", " ");
+
+        normalized = normalized.replaceAll(
+                "\"([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9_]*)['?]+\\s*:",
+                "\"$1\":");
+        normalized = normalized.replaceAll(
+                "\"([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9_]*)['?]*\"\\s*:\\s*",
+                "\"$1\":");
+        normalized = normalized.replaceAll(
+                "(?m)^\\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9_]+)\\s*:",
+                "\"$1\":");
+        normalized = normalized.replaceAll(
+                "'([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9_]*)'\\s*:",
+                "\"$1\":");
+
+        return normalized.trim();
+    }
+
     private static void normalizeNodeKeys(JsonNode node) {
         if (node == null) {
             return;
@@ -389,7 +428,10 @@ public class CurriculumGenerationService {
         }
 
         for (var field : fields) {
-            String normalized = field.getKey().trim();
+            String normalized = field.getKey()
+                    .trim()
+                    .replaceAll("[?'“”‘’]+$", "")
+                    .replaceAll("[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9_]", "");
             if (!normalized.equals(field.getKey())) {
                 object.remove(field.getKey());
                 object.set(normalized, field.getValue());
