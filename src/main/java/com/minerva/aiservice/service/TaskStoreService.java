@@ -79,6 +79,9 @@ public class TaskStoreService {
                 Instant.now().plusSeconds(TTL_SECONDS),
                 null);
         tasks.put(tareaId, record);
+        LOGGER.log(Level.INFO,
+                "TAREA_CREADA: tareaId={0}, tipo={1}",
+                new Object[]{tareaId, record.tipo});
 
         Future<?> future = executor.submit(() -> {
             if ("QUIZ_GENERATE".equals(record.tipo)) {
@@ -110,6 +113,9 @@ public class TaskStoreService {
             record.future.cancel(true);
         }
         tasks.remove(tareaId);
+        LOGGER.log(Level.INFO,
+                "TAREA_CANCELADA: tareaId={0}, tipo={1}",
+                new Object[]{tareaId, record.tipo});
     }
 
     private void runQuizTask(TaskRecord record, JsonNode datos) {
@@ -117,10 +123,19 @@ public class TaskStoreService {
                 "Analizando conceptos con contenido", null, null);
         try {
             QuizGenerationRequest request = quizRequest(datos);
+            LOGGER.log(Level.INFO,
+                    "QUIZ_TAREA_INICIO: tareaId={0}, conceptos={1}, promptChars={2}",
+                    new Object[]{record.tareaId,
+                            request.concepts().size(),
+                            request.prompt().length()});
             update(record.tareaId, "PROCESANDO",
                     "Generando preguntas y distractores", null, null);
             QuizGenerationResponse response =
                     quizGenerationService.generate(request);
+            LOGGER.log(Level.INFO,
+                    "QUIZ_TAREA_COMPLETADA: tareaId={0}, preguntas={1}",
+                    new Object[]{record.tareaId,
+                            response.questions().size()});
             update(record.tareaId, "COMPLETADA",
                     "Preguntas generadas", null, response);
         } catch (RuntimeException exception) {

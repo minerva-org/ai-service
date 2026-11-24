@@ -1,6 +1,8 @@
 package com.minerva.aiservice.service;
 
 import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -17,6 +19,9 @@ import lombok.RequiredArgsConstructor;
 @Service
 @RequiredArgsConstructor
 public class QuizGenerationService {
+
+    private static final Logger LOGGER =
+            Logger.getLogger(QuizGenerationService.class.getName());
 
     private final OllamaClient ollamaClient;
     private final ObjectMapper objectMapper;
@@ -51,6 +56,10 @@ public class QuizGenerationService {
                 toJson(request),
                 QuizGenerationResponse.class);
         ensureValid(result, request);
+        LOGGER.log(Level.INFO,
+                "QUIZ_GENERACION_OK: conceptos={0}, preguntas={1}",
+                new Object[]{request.concepts().size(),
+                        result.questions().size()});
         return result;
     }
 
