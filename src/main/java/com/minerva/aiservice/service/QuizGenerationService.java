@@ -1,5 +1,7 @@
 package com.minerva.aiservice.service;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -51,10 +53,19 @@ public class QuizGenerationService {
                   omite una opción con exactamente una respuesta correcta válida y no cumple el contrato.
                 """;
 
-        QuizGenerationResponse result = aiModelClient.generateJson(
-                systemPrompt,
-                toJson(request),
-                QuizGenerationResponse.class);
+        String raw = aiModelClient.generateStructured(
+                systemPrompt, toJson(request), quizSchema());
+        QuizGenerationResponse result;
+        try {
+            result = objectMapper.readValue(raw, QuizGenerationResponse.class);
+        } catch (tools.jackson.core.JacksonException exception) {
+            LOGGER.log(Level.WARNING,
+                    "QUIZ_RESPUESTA_INVALIDA: respuesta={0}, detalle={1}",
+                    new Object[]{raw, exception.getMessage()});
+            throw new AiModelClient.InvalidModelResponseException(
+                    "El proveedor devolvió JSON inválido para el quiz.",
+                    exception);
+        }
         ensureValid(result, request);
         LOGGER.log(Level.INFO,
                 "QUIZ_GENERACION_OK: conceptos={0}, preguntas={1}",
@@ -63,8 +74,41 @@ public class QuizGenerationService {
         return result;
     }
 
+    private Map<String, Object> quizSchema() {
+        Map<String, Object> option = Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "text", Map.of("type", "string", "minLength", 1),
+                        "isCorrect", Map.of("type", "boolean")),
+                "required", List.of("text", "isCorrect"),
+                "additionalProperties", false);
+        Map<String, Object> question = Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "conceptId", Map.of("type", "string", "minLength", 1),
+                        "question", Map.of("type", "string", "minLength", 1),
+                        "options", Map.of(
+                                "type", "array",
+                                "items", option,
+                                "minItems", 2)),
+                "required", List.of("conceptId", "question", "options"),
+                "additionalProperties", false);
+        return Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "questions", Map.of(
+                                "type", "array",
+                                "items", question,
+                                "minItems", 1)),
+                "required", List.of("questions"),
+                "additionalProperties", false);
+    }
+
     private void ensureValid(QuizGenerationResponse result, QuizGenerationRequest request) {
         if (!validator.validate(result).isEmpty()) {
+            LOGGER.log(Level.WARNING,
+                    "QUIZ_CONTRATO_INVALIDO: respuesta={0}",
+                    objectMapper.valueToTree(result));
             throw new AiModelClient.InvalidModelResponseException(
                     "Model output did not match the quiz schema.");
         }
@@ -79,10 +123,16 @@ public class QuizGenerationService {
                     .filter(QuizGenerationResponse.OptionDTO::isCorrect)
                     .count();
             if (correctOptions != 1) {
+                LOGGER.log(Level.WARNING,
+                        "QUIZ_RESPUESTA_INVALIDA: conceptId={0}, respuestasCorrectas={1}",
+                        new Object[]{question.conceptId(), correctOptions});
                 throw new AiModelClient.InvalidModelResponseException(
                         "Each generated question must have exactly one correct option.");
             }
             if (!selectedConceptIds.contains(question.conceptId())) {
+                LOGGER.log(Level.WARNING,
+                        "QUIZ_RESPUESTA_INVALIDA: conceptIdDesconocido={0}",
+                        question.conceptId());
                 throw new AiModelClient.InvalidModelResponseException(
                         "Generated question references a concept that was not selected.");
             }

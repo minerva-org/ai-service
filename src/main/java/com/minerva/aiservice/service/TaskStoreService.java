@@ -145,7 +145,7 @@ public class TaskStoreService {
                             exception.getClass().getSimpleName(),
                             exception.getMessage()});
             update(record.tareaId, "ERROR",
-                    exception.getMessage(), null, null);
+                    "La generacion termino con un error", exception.getMessage(), null);
         }
     }
 

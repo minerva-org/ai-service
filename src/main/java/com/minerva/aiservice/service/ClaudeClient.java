@@ -106,6 +106,9 @@ public class ClaudeClient implements AiModelClient {
         try {
             return objectMapper.readValue(content, responseType);
         } catch (JacksonException exception) {
+            LOGGER.log(Level.WARNING,
+                    "CLAUDE_RESPUESTA_RAW_INVALIDA: respuesta={0}, detalle={1}",
+                    new Object[]{content, exception.getMessage()});
             throw new AiModelClient.InvalidModelResponseException(
                     "Claude devolvió JSON inválido.", exception);
         }
@@ -186,6 +189,9 @@ public class ClaudeClient implements AiModelClient {
                             "CLAUDE_RESPUESTA: modelo={0}, respuestaChars={1}, duracionMs={2}",
                             new Object[]{model, content.length(),
                                     (System.nanoTime() - startedAt) / 1_000_000});
+                    LOGGER.log(Level.INFO,
+                            "CLAUDE_RESPUESTA_RAW: respuesta={0}",
+                            content);
                     return content;
                 }
             }

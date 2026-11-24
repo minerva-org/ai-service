@@ -44,8 +44,8 @@ class QuizGenerationServiceTest {
                                 new QuizGenerationResponse.OptionDTO("Correcta A", true),
                                 new QuizGenerationResponse.OptionDTO("Correcta B", true)))));
 
-        when(ollamaClient.generateJson(anyString(), anyString(), eq(QuizGenerationResponse.class)))
-                .thenReturn(response);
+        when(ollamaClient.generateStructured(anyString(), anyString(), org.mockito.ArgumentMatchers.anyMap()))
+                .thenReturn(new ObjectMapper().writeValueAsString(response));
 
         assertThrows(
                 AiModelClient.InvalidModelResponseException.class,
