@@ -315,7 +315,11 @@ public class CurriculumGenerationService {
                 - No devuelvas texto antes o despues del objeto JSON.
                 - No inventes informacion no presente en las fuentes.
                 - Agrega solo informacion curricular relevante.
-                - Para cada concepto existente, agrega como maximo 3 descripciones.
+                - Recorre todos los conceptos existentes del indice.
+                - Agrega como maximo 1 descripcion por concepto existente.
+                - Si un concepto tiene varias frases relevantes, elige solo la mas
+                  breve y representativa.
+                - Omite un concepto si no tiene informacion verificable en la fuente.
                 - Limita la respuesta a cambios verificables presentes en la fuente.
                 - Devuelve exclusivamente JSON valido conforme al contrato.
                 """;
@@ -372,6 +376,8 @@ public class CurriculumGenerationService {
                 Tarea:
                 Analiza solo las fuentes nuevas.
                 Lista solo contenido nuevo para conceptos existentes usando conceptoId.
+                Emite como maximo 1 elemento en "contenidos" por conceptoId.
+                Revisa todos los conceptos del indice antes de decidir omitir uno.
                 Lista solo unidades, temas o conceptos nuevos usando tipo, nombre y parentId.
                 Si no hay cambios, devuelve {"contenidos":[],"nodos":[]}.
                 """;
@@ -510,6 +516,7 @@ public class CurriculumGenerationService {
         ObjectNode merged = (ObjectNode) objectMapper.valueToTree(original);
         MergeCounter counter = new MergeCounter();
         List<String> errors = new ArrayList<>();
+        Set<String> conceptosConContenido = new LinkedHashSet<>();
 
         JsonNode contenidos = operations.get("contenidos");
         if (contenidos != null && contenidos.isArray()) {
@@ -523,6 +530,9 @@ public class CurriculumGenerationService {
                     continue;
                 }
                 if (descripcion.isBlank()) {
+                    continue;
+                }
+                if (!conceptosConContenido.add(conceptoId)) {
                     continue;
                 }
                 addGeneratedContent((ObjectNode) concepto, descripcion, counter);
