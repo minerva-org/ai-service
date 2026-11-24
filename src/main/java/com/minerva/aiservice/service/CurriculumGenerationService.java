@@ -204,6 +204,16 @@ public class CurriculumGenerationService {
                     "El modelo devolvio un arbol curricular invalido.",
                     generatedErrors);
         }
+        List<String> preservationErrors =
+                validatePreservedTree(request.arbol(), generatedTree);
+        if (!preservationErrors.isEmpty()) {
+            LOGGER.log(Level.WARNING,
+                    "RESPUESTA_MODELO: arbolBaseNoConservado, errores={0}",
+                    preservationErrors.size());
+            throw new InvalidCurriculumOutputException(
+                    "El modelo no devolvio el arbol curricular recibido completo.",
+                    preservationErrors);
+        }
 
         progress.accept("Fusionando cambios conservadores con el arbol actual");
         MergeResult mergeResult = mergeTemporary(request.arbol(), generatedTree);
@@ -302,6 +312,7 @@ public class CurriculumGenerationService {
                ## Reglas obligatorias:
                 - Conserva todos los nodos persistidos.
                 - Conserva nombres manuales.
+                - En la raiz, "hijos" debe contener las unidades existentes o nuevas.
                 - No elimines unidades, temas ni conceptos.
                 - No crees ni dupliques la materia raiz.
                 - No conviertas el nombre de la materia en una unidad, tema o concepto.
@@ -385,6 +396,93 @@ public class CurriculumGenerationService {
             }
             normalizeNodeKeys(field.getValue());
         }
+    }
+
+    private List<String> validatePreservedTree(
+            JsonNode original,
+            JsonNode generated) {
+        List<String> errors = new ArrayList<>();
+        validatePreservedNode(original, generated, "$.arbol", errors);
+        return List.copyOf(errors);
+    }
+
+    private void validatePreservedNode(
+            JsonNode original,
+            JsonNode generated,
+            String path,
+            List<String> errors) {
+        if (original == null || !original.isObject()) {
+            return;
+        }
+        if (generated == null || !generated.isObject()) {
+            errors.add(path + ": falta el nodo generado.");
+            return;
+        }
+
+        String originalId = text(original, "id");
+        String generatedId = text(generated, "id");
+        if (!originalId.isBlank() && !originalId.equals(generatedId)) {
+            errors.add(path + ".id: no se conserva el nodo existente.");
+        }
+
+        String originalName = text(original, "nombre");
+        String generatedName = text(generated, "nombre");
+        if (!originalName.isBlank()
+                && !normalizeName(originalName).equals(normalizeName(generatedName))) {
+            errors.add(path + ".nombre: no se conserva el nombre existente.");
+        }
+
+        JsonNode originalChildren = original.get("hijos");
+        JsonNode generatedChildren = generated.get("hijos");
+        if (originalChildren == null || !originalChildren.isArray()) {
+            return;
+        }
+        if (generatedChildren == null || !generatedChildren.isArray()) {
+            errors.add(path + ".hijos: falta la lista completa de nodos existentes.");
+            return;
+        }
+
+        for (int i = 0; i < originalChildren.size(); i++) {
+            JsonNode originalChild = originalChildren.get(i);
+            String originalChildId = text(originalChild, "id");
+            String originalChildName = text(originalChild, "nombre");
+            String originalChildType = text(originalChild, "tipo");
+            JsonNode generatedChild = findByIdOrNameAndType(
+                    generatedChildren,
+                    originalChildId,
+                    originalChildName,
+                    originalChildType);
+            if (generatedChild == null) {
+                errors.add(path + ".hijos: falta el nodo existente \""
+                        + originalChildName + "\".");
+                continue;
+            }
+            validatePreservedNode(
+                    originalChild,
+                    generatedChild,
+                    path + ".hijos",
+                    errors);
+        }
+    }
+
+    private JsonNode findByIdOrNameAndType(
+            JsonNode children,
+            String id,
+            String name,
+            String type) {
+        if (children == null || !children.isArray()) {
+            return null;
+        }
+        for (JsonNode child : children) {
+            if (!id.isBlank() && id.equals(text(child, "id"))) {
+                return child;
+            }
+            if (normalizeName(name).equals(normalizeName(text(child, "nombre")))
+                    && normalizeName(type).equals(normalizeName(text(child, "tipo")))) {
+                return child;
+            }
+        }
+        return null;
     }
 
     private MergeResult mergeTemporary(JsonNode original, JsonNode generated) {

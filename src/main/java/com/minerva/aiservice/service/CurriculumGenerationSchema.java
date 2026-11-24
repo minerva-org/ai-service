@@ -45,9 +45,9 @@ final class CurriculumGenerationSchema {
                                                 "estadoConcepto", Map.of("type", "string"),
                                                 "contenido", Map.of("type", "array"),
                                                 "hijos", Map.of("type", "array")),
-                                        "required", List.of("tipo", "nombre"),
+                                        "required", List.of("tipo", "nombre", "hijos"),
                                         "additionalProperties", true))),
-                "required", List.of("tipo", "nombre"),
+                "required", List.of("tipo", "nombre", "hijos"),
                 "additionalProperties", false);
 
         return node;
