@@ -294,11 +294,12 @@ public class CurriculumGenerationService {
 
     private String threeLayerSystemPrompt() {
         return """
+                ## Rol:
                 Eres un asistente de construccion curricular.
                 Recibiras un arbol JSON existente y fuentes nuevas.
                 Alimenta el arbol sin destruirlo.
 
-                Reglas obligatorias:
+               ## Reglas obligatorias:
                 - Conserva todos los nodos persistidos.
                 - Conserva nombres manuales.
                 - No elimines unidades, temas ni conceptos.
@@ -338,7 +339,7 @@ public class CurriculumGenerationService {
 
                 Tarea:
                 Analiza solo las fuentes nuevas.
-                Detecta unidades, temas y conceptos relevantes.
+                Detecta unidades, temas y conceptos relevantes y agrega las que no se encuentren al arbol.
                 Relaciona primero los nombres del arbol con las secciones de las fuentes.
                 Agrega contenido breve y verificable a los conceptos coincidentes.
                 Agrega unidades, temas o conceptos nuevos solo cuando la fuente los
@@ -348,6 +349,8 @@ public class CurriculumGenerationService {
                 No agregues espacios al final de los nombres de claves.
                 No persistiras cambios.
                 No debes devolver explicaciones fuera del JSON.
+                Haz crecer el arbol lo mas que puedas.
+                Analiza todo el texto de la fuente.
                 """;
     }
 
