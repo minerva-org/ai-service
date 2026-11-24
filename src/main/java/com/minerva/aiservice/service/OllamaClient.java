@@ -110,6 +110,9 @@ public class OllamaClient {
                 "OLLAMA_RESPUESTA: modelo={0}, respuestaChars={1}, duracionMs={2}",
                 new Object[]{properties.ollama().model(), content.length(),
                         (System.nanoTime() - startedAt) / 1_000_000});
+        LOGGER.log(Level.INFO,
+                "OLLAMA_RESPUESTA_RAW: respuesta={0}",
+                content);
         return content;
     }
 
