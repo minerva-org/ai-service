@@ -48,7 +48,7 @@ final class CurriculumGenerationSchema {
                                         "required", List.of("tipo", "nombre"),
                                         "additionalProperties", true))),
                 "required", List.of("tipo", "nombre"),
-                "additionalProperties", true);
+                "additionalProperties", false);
 
         return node;
     }

@@ -111,6 +111,10 @@ public class OllamaClient {
                 new Object[]{properties.ollama().model(), content.length(),
                         (System.nanoTime() - startedAt) / 1_000_000});
         LOGGER.log(Level.INFO,
+                "OLLAMA_ESTADO: modelo={0}, done={1}, doneReason={2}",
+                new Object[]{properties.ollama().model(), response.done(),
+                        response.doneReason()});
+        LOGGER.log(Level.INFO,
                 "OLLAMA_RESPUESTA_RAW: respuesta={0}",
                 content);
         return content;
@@ -134,7 +138,10 @@ public class OllamaClient {
     private record OllamaModel(String name) {
     }
 
-    private record OllamaChatResponse(OllamaMessage message) {
+    private record OllamaChatResponse(
+            OllamaMessage message,
+            Boolean done,
+            String doneReason) {
     }
 
     private record OllamaMessage(String role, String content) {

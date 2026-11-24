@@ -349,8 +349,10 @@ public class CurriculumGenerationService {
                 No agregues espacios al final de los nombres de claves.
                 No persistiras cambios.
                 No debes devolver explicaciones fuera del JSON.
-                Haz crecer el arbol lo mas que puedas.
-                Analiza todo el texto de la fuente.
+                Limita la respuesta a cambios verificables presentes en la fuente.
+                Para evitar truncamientos, devuelve como maximo 2 temas y 10 conceptos nuevos por fuente
+                Los temas tienen que secciones que tengan conceptos por debajo para justificar su creacion
+                y agrega como maximo 3 descripciones por concepto.
                 """;
     }
 
