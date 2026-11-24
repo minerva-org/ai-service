@@ -210,6 +210,10 @@ public class ClaudeClient implements AiModelClient {
         }
         if (exception instanceof RestClientResponseException responseException) {
             int statusCode = responseException.getStatusCode().value();
+            LOGGER.log(Level.WARNING,
+                    "CLAUDE_API_RESPUESTA_ERROR: status={0}, cuerpo={1}",
+                    new Object[]{statusCode,
+                            responseException.getResponseBodyAsString()});
             if (statusCode == 408 || statusCode == 429 || statusCode >= 500) {
                 return new AiModelClient.ProviderUnavailableException(
                         "La API de Claude no está disponible.", exception);
@@ -238,7 +242,8 @@ public class ClaudeClient implements AiModelClient {
             Map<String, Object> transformed = new LinkedHashMap<>();
             for (Map.Entry<?, ?> entry : map.entrySet()) {
                 if (entry.getKey() instanceof String key
-                        && !"minLength".equals(key)) {
+                        && !"minLength".equals(key)
+                        && !"minItems".equals(key)) {
                     transformed.put(key, transformSchemaValue(entry.getValue()));
                 }
             }
