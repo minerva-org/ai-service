@@ -17,12 +17,16 @@ import org.junit.jupiter.api.Test;
 
 import com.minerva.aiservice.dto.CurriculumGenerationRequest;
 import com.minerva.aiservice.dto.CurriculumGenerationResponse;
+import com.minerva.aiservice.dto.QuizGenerationRequest;
+import com.minerva.aiservice.dto.QuizGenerationResponse;
 import com.minerva.aiservice.dto.TaskDtos;
+import com.minerva.aiservice.service.QuizGenerationService;
 
 import tools.jackson.databind.ObjectMapper;
 
 class TaskStoreServiceTest {
     private CurriculumGenerationService curriculumService;
+    private QuizGenerationService quizService;
     private TaskStoreService store;
     private ObjectMapper mapper;
 
@@ -30,7 +34,8 @@ class TaskStoreServiceTest {
     void setUp() {
         mapper = new ObjectMapper();
         curriculumService = mock(CurriculumGenerationService.class);
-        store = new TaskStoreService(curriculumService, mapper);
+        quizService = mock(QuizGenerationService.class);
+        store = new TaskStoreService(curriculumService, quizService, mapper);
     }
 
     @AfterEach
@@ -221,6 +226,100 @@ class TaskStoreServiceTest {
         assertEquals("ERROR", status.estado());
         assertEquals("Ollama no disponible", status.error());
         assertEquals(null, status.resultado());
+    }
+
+    @Test
+    void acceptsQuizTaskAndGeneratesFromEligibleConceptContent() throws Exception {
+        var arbol = mapper.createObjectNode();
+        arbol.put("tipo", "materia");
+        arbol.put("nombre", "Materia");
+        var unidad = arbol.putArray("hijos").addObject();
+        unidad.put("tipo", "unidad");
+        unidad.put("nombre", "Unidad");
+        var tema = unidad.putArray("hijos").addObject();
+        tema.put("tipo", "tema");
+        tema.put("nombre", "Tema");
+        var concepto = tema.putArray("hijos").addObject();
+        concepto.put("id", "concept-1");
+        concepto.put("tipo", "concepto");
+        concepto.put("nombre", "Concepto");
+        concepto.putArray("contenido")
+                .addObject()
+                .put("descripcion", "Contenido verificable.");
+
+        var datos = mapper.createObjectNode();
+        datos.put("prompt", "Genera 10 preguntas.");
+        datos.set("arbol", arbol);
+
+        var response = new QuizGenerationResponse(
+                List.of(new QuizGenerationResponse.QuestionDTO(
+                        "concept-1",
+                        "Pregunta generada.",
+                        "Contenido verificable.",
+                        List.of(
+                                new QuizGenerationResponse.OptionDTO(
+                                        "Correcta", true),
+                                new QuizGenerationResponse.OptionDTO(
+                                        "Distractor", false)))));
+        when(quizService.generate(any(QuizGenerationRequest.class)))
+                .thenReturn(response);
+
+        var created = store.create(new TaskDtos.CreateRequest(
+                "QUIZ_GENERATE",
+                datos));
+
+        TaskDtos.StatusResponse status = null;
+        for (int i = 0; i < 200; i++) {
+            status = store.get(created.tareaId());
+            if ("COMPLETADA".equals(status.estado())
+                    || "ERROR".equals(status.estado())) {
+                break;
+            }
+            TimeUnit.MILLISECONDS.sleep(25);
+        }
+
+        assertEquals("COMPLETADA", status.estado());
+        assertEquals("Preguntas generadas", status.progreso());
+        assertNotNull(status.resultado());
+    }
+
+    @Test
+    void createsQuizTaskFromCurriculumCatalogShape() {
+        var datos = mapper.createObjectNode();
+        datos.put("prompt", "Genera una pregunta.");
+        var arbol = datos.putObject("arbol");
+        arbol.put("idGrupo", "grupo-1");
+        var unidad = arbol.putArray("unidades").addObject();
+        unidad.put("id", "unidad-1");
+        unidad.put("nombre", "Unidad");
+        var tema = unidad.putArray("temas").addObject();
+        tema.put("id", "tema-1");
+        tema.put("nombre", "Tema");
+        var concepto = tema.putArray("conceptos").addObject();
+        concepto.put("id", "concepto-1");
+        concepto.put("nombre", "Concepto");
+        concepto.putArray("contenidos")
+                .addObject()
+                .put("descripcion", "Contenido verificable.");
+
+        var response = new QuizGenerationResponse(
+                List.of(new QuizGenerationResponse.QuestionDTO(
+                        "concepto-1",
+                        "Pregunta generada.",
+                        "Contenido verificable.",
+                        List.of(
+                                new QuizGenerationResponse.OptionDTO(
+                                        "Correcta", true),
+                                new QuizGenerationResponse.OptionDTO(
+                                        "Distractor", false)))));
+        when(quizService.generate(any(QuizGenerationRequest.class)))
+                .thenReturn(response);
+
+        var created = store.create(new TaskDtos.CreateRequest(
+                "QUIZ_GENERATE",
+                datos));
+
+        assertNotNull(created.tareaId());
     }
 
     @Test

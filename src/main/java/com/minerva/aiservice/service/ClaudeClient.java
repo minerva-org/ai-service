@@ -22,9 +22,11 @@ import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import org.springframework.context.annotation.Primary;
 
 @Service
 @ConditionalOnProperty(name = "ai.provider", havingValue = "claude")
+@Primary
 public class ClaudeClient implements AiModelClient {
     private static final Logger LOGGER =
             Logger.getLogger(ClaudeClient.class.getName());
@@ -104,6 +106,9 @@ public class ClaudeClient implements AiModelClient {
         try {
             return objectMapper.readValue(content, responseType);
         } catch (JacksonException exception) {
+            LOGGER.log(Level.WARNING,
+                    "CLAUDE_RESPUESTA_RAW_INVALIDA: respuesta={0}, detalle={1}",
+                    new Object[]{content, exception.getMessage()});
             throw new AiModelClient.InvalidModelResponseException(
                     "Claude devolvió JSON inválido.", exception);
         }
@@ -184,6 +189,9 @@ public class ClaudeClient implements AiModelClient {
                             "CLAUDE_RESPUESTA: modelo={0}, respuestaChars={1}, duracionMs={2}",
                             new Object[]{model, content.length(),
                                     (System.nanoTime() - startedAt) / 1_000_000});
+                    LOGGER.log(Level.INFO,
+                            "CLAUDE_RESPUESTA_RAW: respuesta={0}",
+                            content);
                     return content;
                 }
             }
@@ -202,6 +210,10 @@ public class ClaudeClient implements AiModelClient {
         }
         if (exception instanceof RestClientResponseException responseException) {
             int statusCode = responseException.getStatusCode().value();
+            LOGGER.log(Level.WARNING,
+                    "CLAUDE_API_RESPUESTA_ERROR: status={0}, cuerpo={1}",
+                    new Object[]{statusCode,
+                            responseException.getResponseBodyAsString()});
             if (statusCode == 408 || statusCode == 429 || statusCode >= 500) {
                 return new AiModelClient.ProviderUnavailableException(
                         "La API de Claude no está disponible.", exception);
@@ -230,7 +242,8 @@ public class ClaudeClient implements AiModelClient {
             Map<String, Object> transformed = new LinkedHashMap<>();
             for (Map.Entry<?, ?> entry : map.entrySet()) {
                 if (entry.getKey() instanceof String key
-                        && !"minLength".equals(key)) {
+                        && !"minLength".equals(key)
+                        && !"minItems".equals(key)) {
                     transformed.put(key, transformSchemaValue(entry.getValue()));
                 }
             }

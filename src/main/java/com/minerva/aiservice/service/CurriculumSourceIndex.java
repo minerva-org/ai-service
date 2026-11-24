@@ -23,7 +23,6 @@ final class CurriculumSourceIndex {
      * Evita que fuentes breves (un parrafo sin encabezado reconocible)
      * se marquen como "sin texto curricular relevante" sin intentarlo.
      */
-    private static final int SHORT_TEXT_THRESHOLD = 4_000;
     private static final Logger LOGGER =
             Logger.getLogger(CurriculumSourceIndex.class.getName());
 
@@ -63,23 +62,11 @@ final class CurriculumSourceIndex {
         boolean hasRelevantContent = candidates.stream()
                 .anyMatch(fragment -> fragment.score > 0);
         if (!hasRelevantContent) {
-            // Fix 4: si el texto es corto, no lo descartamos. Lo enviamos
-            // completo (acotado por palabras) al modelo. Si es largo y no
-            // hay coincidencias, sigue descartandose para no quemar contexto.
-            boolean shortText = text.length() <= SHORT_TEXT_THRESHOLD;
             LOGGER.log(Level.INFO,
-                    "INDICE_FUENTE: sin coincidencias, textoCorto={0}, caracteresTexto={1}, palabrasClave={2}",
-                    new Object[]{shortText, text.length(), keywords.size()});
-            if (shortText) {
-                String limited = limitWords(text, MAX_WORDS_PER_FRAGMENT * 3);
-                LOGGER.log(Level.INFO,
-                        "INDICE_FUENTE: fallback texto corto, caracteres={0}",
-                        limited.length());
-                return limited;
-            }
+                    "INDICE_FUENTE: candidatos={0}, relevantes=0, textoDescartadoPorLargo, caracteresTexto={1}, palabrasClave={2}",
+                    new Object[]{candidates.size(), text.length(), keywords.size()});
             LOGGER.log(Level.WARNING,
-                    "INDICE_FUENTE: candidatos={0}, relevantes=0, textoDescartadoPorLargo, caracteresTexto={1}",
-                    new Object[]{candidates.size(), text.length()});
+                    "INDICE_FUENTE: sin coincidencias con el arbol curricular");
             return "";
         }
 

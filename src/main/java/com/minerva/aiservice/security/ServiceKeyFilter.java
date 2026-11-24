@@ -3,6 +3,8 @@ package com.minerva.aiservice.security;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -18,6 +20,9 @@ import lombok.RequiredArgsConstructor;
 @Component
 @RequiredArgsConstructor
 public class ServiceKeyFilter extends OncePerRequestFilter {
+
+    private static final Logger LOGGER =
+            Logger.getLogger(ServiceKeyFilter.class.getName());
 
     private static final String HEADER_NAME = "X-AI-Service-Key";
     private static final String HEALTH_PATH = "/health";
@@ -39,6 +44,9 @@ public class ServiceKeyFilter extends OncePerRequestFilter {
             FilterChain filterChain) throws ServletException, IOException {
         String providedKey = request.getHeader(HEADER_NAME);
         if (providedKey == null || providedKey.isBlank()) {
+            LOGGER.log(Level.WARNING,
+                    "AI_SERVICE_CLAVE_AUSENTE: metodo={0}, uri={1}",
+                    new Object[]{request.getMethod(), request.getRequestURI()});
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Missing AI service key");
             return;
         }
@@ -46,6 +54,9 @@ public class ServiceKeyFilter extends OncePerRequestFilter {
         byte[] expected = properties.security().apiKey().getBytes(StandardCharsets.UTF_8);
         byte[] provided = providedKey.getBytes(StandardCharsets.UTF_8);
         if (!MessageDigest.isEqual(expected, provided)) {
+            LOGGER.log(Level.WARNING,
+                    "AI_SERVICE_CLAVE_INVALIDA: metodo={0}, uri={1}",
+                    new Object[]{request.getMethod(), request.getRequestURI()});
             response.sendError(HttpServletResponse.SC_FORBIDDEN, "Invalid AI service key");
             return;
         }
