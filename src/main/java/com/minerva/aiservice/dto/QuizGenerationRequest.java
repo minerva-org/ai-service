@@ -11,6 +11,12 @@ public record QuizGenerationRequest(
         @NotBlank @Size(max = 10_000) String prompt,
         @NotEmpty @Size(max = 100) List<@Valid ConceptInput> concepts) {
 
-    public record ConceptInput(@NotBlank String id, @NotBlank String name) {
+    public record ConceptInput(
+            @NotBlank String id,
+            @NotBlank String name,
+            @Valid List<ContentInput> content) {
+    }
+
+    public record ContentInput(@NotBlank String description) {
     }
 }

@@ -19,7 +19,6 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 @Service
-@ConditionalOnProperty(name = "ai.provider", havingValue = "ollama", matchIfMissing = true)
 public class OllamaClient implements AiModelClient {
 
     private static final Logger LOGGER =

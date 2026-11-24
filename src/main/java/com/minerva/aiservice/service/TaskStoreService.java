@@ -22,6 +22,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.minerva.aiservice.dto.CurriculumGenerationRequest;
 import com.minerva.aiservice.dto.CurriculumGenerationResponse;
+import com.minerva.aiservice.dto.QuizGenerationRequest;
+import com.minerva.aiservice.dto.QuizGenerationResponse;
 import com.minerva.aiservice.dto.TaskDtos;
 
 import jakarta.annotation.PreDestroy;
@@ -37,25 +39,34 @@ public class TaskStoreService {
     private final Map<String, TaskRecord> tasks = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final CurriculumGenerationService curriculumGenerationService;
+    private final QuizGenerationService quizGenerationService;
     private final ObjectMapper objectMapper;
 
     public TaskStoreService(
             CurriculumGenerationService curriculumGenerationService,
+            QuizGenerationService quizGenerationService,
             ObjectMapper objectMapper) {
         this.curriculumGenerationService = curriculumGenerationService;
+        this.quizGenerationService = quizGenerationService;
         this.objectMapper = objectMapper;
     }
 
     public TaskDtos.CreateResponse create(TaskDtos.CreateRequest request) {
         if (request == null
                 || request.tipo() == null
-                || !"CURRICULUM_GENERATE".equalsIgnoreCase(request.tipo())
                 || request.datos() == null
                 || !request.datos().isObject()) {
             throw new InvalidTaskRequestException(
                     "Tipo de tarea no valido o datos incompletos.");
         }
-        curriculumRequest(request.datos());
+        String tipo = request.tipo().toUpperCase(Locale.ROOT);
+        if ("CURRICULUM_GENERATE".equals(tipo)) {
+            curriculumRequest(request.datos());
+        } else if ("QUIZ_GENERATE".equals(tipo)) {
+            quizRequest(request.datos());
+        } else {
+            throw new InvalidTaskRequestException("Tipo de tarea no valido.");
+        }
 
         String tareaId = UUID.randomUUID().toString();
         TaskRecord record = new TaskRecord(
@@ -69,8 +80,13 @@ public class TaskStoreService {
                 null);
         tasks.put(tareaId, record);
 
-        Future<?> future = executor.submit(() ->
-                runCurriculumTask(record, request.datos()));
+        Future<?> future = executor.submit(() -> {
+            if ("QUIZ_GENERATE".equals(record.tipo)) {
+                runQuizTask(record, request.datos());
+            } else {
+                runCurriculumTask(record, request.datos());
+            }
+        });
         record.future = future;
         return new TaskDtos.CreateResponse(tareaId);
     }
@@ -94,6 +110,28 @@ public class TaskStoreService {
             record.future.cancel(true);
         }
         tasks.remove(tareaId);
+    }
+
+    private void runQuizTask(TaskRecord record, JsonNode datos) {
+        update(record.tareaId, "PROCESANDO",
+                "Analizando conceptos con contenido", null, null);
+        try {
+            QuizGenerationRequest request = quizRequest(datos);
+            update(record.tareaId, "PROCESANDO",
+                    "Generando preguntas y distractores", null, null);
+            QuizGenerationResponse response =
+                    quizGenerationService.generate(request);
+            update(record.tareaId, "COMPLETADA",
+                    "Preguntas generadas", null, response);
+        } catch (RuntimeException exception) {
+            LOGGER.log(Level.WARNING,
+                    "TAREA_ERROR: tareaId={0}, tipoError={1}, mensaje={2}",
+                    new Object[]{record.tareaId,
+                            exception.getClass().getSimpleName(),
+                            exception.getMessage()});
+            update(record.tareaId, "ERROR",
+                    exception.getMessage(), null, null);
+        }
     }
 
     private void runCurriculumTask(TaskRecord record, JsonNode datos) {
@@ -134,6 +172,66 @@ public class TaskStoreService {
                             exception.getMessage()});
             update(record.tareaId, "ERROR",
                     null, exception.getMessage(), null);
+        }
+    }
+
+    private QuizGenerationRequest quizRequest(JsonNode datos) {
+        String prompt = text(datos, "prompt");
+        if (prompt.isBlank()) {
+            throw new InvalidTaskRequestException(
+                    "El campo datos.prompt es obligatorio.");
+        }
+        JsonNode arbol = datos.get("arbol");
+        if (arbol == null || !arbol.isObject()) {
+            throw new InvalidTaskRequestException(
+                    "El campo datos.arbol es obligatorio.");
+        }
+
+        List<QuizGenerationRequest.ConceptInput> concepts =
+                new ArrayList<>();
+        collectEligibleQuizConcepts(arbol, concepts);
+        if (concepts.isEmpty()) {
+            throw new InvalidTaskRequestException(
+                    "No hay conceptos con contenido relacionado.");
+        }
+        return new QuizGenerationRequest(prompt, concepts);
+    }
+
+    private void collectEligibleQuizConcepts(
+            JsonNode node,
+            List<QuizGenerationRequest.ConceptInput> concepts) {
+        if (node == null || !node.isObject()) {
+            return;
+        }
+        if ("concepto".equalsIgnoreCase(text(node, "tipo"))) {
+            String id = text(node, "id");
+            String name = text(node, "nombre");
+            JsonNode contenido = node.get("contenido");
+            if (!id.isBlank() && !name.isBlank()
+                    && contenido != null && contenido.isArray()
+                    && !contenido.isEmpty()) {
+                List<QuizGenerationRequest.ContentInput> content =
+                        new ArrayList<>();
+                for (JsonNode item : contenido) {
+                    String description = text(item, "descripcion");
+                    if (!description.isBlank()) {
+                        content.add(new QuizGenerationRequest.ContentInput(
+                                description));
+                    }
+                }
+                if (content.isEmpty()) {
+                    return;
+                }
+                concepts.add(
+                        new QuizGenerationRequest.ConceptInput(
+                                id, name, content));
+            }
+        }
+        JsonNode hijos = node.get("hijos");
+        if (hijos != null && hijos.isArray()) {
+            for (JsonNode child : hijos) {
+                collectEligibleQuizConcepts(child, concepts);
+            }
         }
     }
 

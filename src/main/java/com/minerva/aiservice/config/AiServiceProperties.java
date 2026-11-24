@@ -32,4 +32,5 @@ public record AiServiceProperties(
             @Positive long maxPdfBytes,
             @Positive int maxExtractedCharacters) {
     }
+
 }

@@ -31,7 +31,11 @@ class QuizGenerationServiceTest {
 
         QuizGenerationRequest request = new QuizGenerationRequest(
                 "Genera una pregunta",
-                List.of(new QuizGenerationRequest.ConceptInput("concept-1", "Concepto")));
+                List.of(new QuizGenerationRequest.ConceptInput(
+                        "concept-1",
+                        "Concepto",
+                        List.of(new QuizGenerationRequest.ContentInput(
+                                "Contenido verificable.")))));
         QuizGenerationResponse response = new QuizGenerationResponse(List.of(
                 new QuizGenerationResponse.QuestionDTO(
                         "concept-1",

@@ -18,18 +18,35 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class QuizGenerationService {
 
-    private final AiModelClient aiModelClient;
+    private final OllamaClient ollamaClient;
     private final ObjectMapper objectMapper;
     private final Validator validator;
 
     public QuizGenerationResponse generate(QuizGenerationRequest request) {
         String systemPrompt = """
-                Genera preguntas de quiz en el idioma solicitado por el usuario, basadas únicamente en el prompt
-                y los conceptos recibidos. Cada pregunta debe tener exactamente una opción correcta y al menos
-                un distractor. Conserva el conceptId de un concepto recibido. Devuelve únicamente JSON válido.
+                ## Rol:
+                Eres un agente especializado en generar preguntas de evaluacion.
+
+                ## Reglas:
+                - Genera por defecto 10 preguntas si el prompt no indica una cantidad distinta.
+                - Usa verdadero/falso y opcion multiple.
+                - Cada pregunta debe tener exactamente una respuesta correcta.
+                - Las opciones correctas deben basarse directamente en el contenido relacionado
+                  de los conceptos recibidos.
+                - Los distractores pueden generarse con libertad, pero deben ser cercanos,
+                  plausibles y distinguirse claramente de la respuesta correcta.
+                - Conserva el conceptId recibido.
+                - No incluyas conceptos que no tengan contenido relacionado.
+                - Devuelve exclusivamente JSON valido conforme al esquema.
+                - Ejemplo JSON válido:
+                  {"questions":[{"conceptId":"CONCEPTO-1","question":"¿Qué operación inserta un elemento al inicio?","options":[{"text":"Push","isCorrect":true},{"text":"Pop","isCorrect":false},{"text":"Peek","isCorrect":false},{"text":"Sort","isCorrect":false}]}]}
+                - Ejemplo JSON inválido:
+                  {"questions":[{"conceptId":"CONCEPTO-1","question":"¿Qué operación inserta?","options":[{"text":"Push","esCorrecta":true},{"text":"Pop","esCorrecta":false}]}]}
+                - El segundo ejemplo es inválido porque usa "esCorrecta" en lugar de "isCorrect",
+                  omite una opción con exactamente una respuesta correcta válida y no cumple el contrato.
                 """;
 
-        QuizGenerationResponse result = aiModelClient.generateJson(
+        QuizGenerationResponse result = ollamaClient.generateJson(
                 systemPrompt,
                 toJson(request),
                 QuizGenerationResponse.class);
@@ -39,7 +56,7 @@ public class QuizGenerationService {
 
     private void ensureValid(QuizGenerationResponse result, QuizGenerationRequest request) {
         if (!validator.validate(result).isEmpty()) {
-            throw new AiModelClient.InvalidModelResponseException(
+            throw new OllamaClient.InvalidModelResponseException(
                     "Model output did not match the quiz schema.");
         }
 
@@ -53,11 +70,11 @@ public class QuizGenerationService {
                     .filter(QuizGenerationResponse.OptionDTO::isCorrect)
                     .count();
             if (correctOptions != 1) {
-                throw new AiModelClient.InvalidModelResponseException(
+                throw new OllamaClient.InvalidModelResponseException(
                         "Each generated question must have exactly one correct option.");
             }
             if (!selectedConceptIds.contains(question.conceptId())) {
-                throw new AiModelClient.InvalidModelResponseException(
+                throw new OllamaClient.InvalidModelResponseException(
                         "Generated question references a concept that was not selected.");
             }
         }
