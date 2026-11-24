@@ -23,7 +23,7 @@ public class QuizGenerationService {
     private static final Logger LOGGER =
             Logger.getLogger(QuizGenerationService.class.getName());
 
-    private final OllamaClient ollamaClient;
+    private final AiModelClient aiModelClient;
     private final ObjectMapper objectMapper;
     private final Validator validator;
 
@@ -51,7 +51,7 @@ public class QuizGenerationService {
                   omite una opción con exactamente una respuesta correcta válida y no cumple el contrato.
                 """;
 
-        QuizGenerationResponse result = ollamaClient.generateJson(
+        QuizGenerationResponse result = aiModelClient.generateJson(
                 systemPrompt,
                 toJson(request),
                 QuizGenerationResponse.class);
@@ -65,7 +65,7 @@ public class QuizGenerationService {
 
     private void ensureValid(QuizGenerationResponse result, QuizGenerationRequest request) {
         if (!validator.validate(result).isEmpty()) {
-            throw new OllamaClient.InvalidModelResponseException(
+            throw new AiModelClient.InvalidModelResponseException(
                     "Model output did not match the quiz schema.");
         }
 
@@ -79,11 +79,11 @@ public class QuizGenerationService {
                     .filter(QuizGenerationResponse.OptionDTO::isCorrect)
                     .count();
             if (correctOptions != 1) {
-                throw new OllamaClient.InvalidModelResponseException(
+                throw new AiModelClient.InvalidModelResponseException(
                         "Each generated question must have exactly one correct option.");
             }
             if (!selectedConceptIds.contains(question.conceptId())) {
-                throw new OllamaClient.InvalidModelResponseException(
+                throw new AiModelClient.InvalidModelResponseException(
                         "Generated question references a concept that was not selected.");
             }
         }
