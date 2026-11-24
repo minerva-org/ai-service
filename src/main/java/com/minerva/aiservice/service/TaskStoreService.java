@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.minerva.aiservice.dto.CurriculumGenerationRequest;
+import com.minerva.aiservice.dto.CurriculumGenerationResponse;
 import com.minerva.aiservice.dto.TaskDtos;
 
 import jakarta.annotation.PreDestroy;
@@ -112,6 +113,17 @@ public class TaskStoreService {
                                     progress,
                                     null,
                                     null));
+            if (!response.errores().isEmpty()
+                    && response.fuentesProcesadas().isEmpty()) {
+                String errorMessage = response.errores().stream()
+                        .map(CurriculumGenerationResponse.ErrorDetalle::mensaje)
+                        .filter(message -> message != null && !message.isBlank())
+                        .findFirst()
+                        .orElse("La generacion termino con un error.");
+                update(record.tareaId, "ERROR",
+                        null, errorMessage, null);
+                return;
+            }
             update(record.tareaId, "COMPLETADA",
                     "Generacion terminada", null, response);
         } catch (RuntimeException exception) {

@@ -60,6 +60,34 @@ class PdfTextExtractorTest {
     }
 
     @Test
+    void rejectsExtractedTextThatExceedsConfiguredLimit() throws Exception {
+        var limitedExtractor = new PdfTextExtractor(new AiServiceProperties(
+                new AiServiceProperties.Ollama(
+                        "http://localhost", "qwen3:8b", Duration.ofSeconds(180)),
+                new AiServiceProperties.Security("a".repeat(32)),
+                new AiServiceProperties.Limits(10485760, 10)));
+
+        try (PDDocument pdf = new PDDocument(); var bytes = new ByteArrayOutputStream()) {
+            pdf.addPage(new PDPage());
+            try (var content = new PDPageContentStream(
+                    pdf, pdf.getPage(0))) {
+                content.beginText();
+                content.setFont(
+                        new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+                content.newLineAtOffset(20, 700);
+                content.showText("Texto demasiado largo");
+                content.endText();
+            }
+            pdf.save(bytes);
+
+            assertThrows(PdfTextExtractor.PdfTextTooLargeException.class,
+                    () -> limitedExtractor.extract(new MockMultipartFile(
+                            "file", "largo.pdf", "application/pdf",
+                            bytes.toByteArray())));
+        }
+    }
+
+    @Test
     void enforcesTenMiBBoundaryWithoutReadingOversizedUpload() throws Exception {
         MultipartFile file = mock(MultipartFile.class);
         when(file.getOriginalFilename()).thenReturn("plan.pdf");
