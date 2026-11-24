@@ -40,11 +40,52 @@ class QuizGenerationServiceTest {
                 new QuizGenerationResponse.QuestionDTO(
                         "concept-1",
                         "Pregunta",
+                        "Contenido verificable.",
                         List.of(
                                 new QuizGenerationResponse.OptionDTO("Correcta A", true),
                                 new QuizGenerationResponse.OptionDTO("Correcta B", true)))));
 
         when(ollamaClient.generateStructured(anyString(), anyString(), org.mockito.ArgumentMatchers.anyMap()))
+                .thenReturn(new ObjectMapper().writeValueAsString(response));
+
+        assertThrows(
+                AiModelClient.InvalidModelResponseException.class,
+                () -> service.generate(request));
+    }
+
+    @Test
+    void rejectsEvidenceFromAnotherConcept() throws Exception {
+        AiModelClient client = mock(AiModelClient.class);
+        Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
+        QuizGenerationService service = new QuizGenerationService(
+                client,
+                new ObjectMapper(),
+                validator);
+        QuizGenerationRequest request = new QuizGenerationRequest(
+                "Genera una pregunta",
+                List.of(
+                        new QuizGenerationRequest.ConceptInput(
+                                "concept-1",
+                                "Concepto uno",
+                                List.of(new QuizGenerationRequest.ContentInput(
+                                        "Evidencia del primer concepto."))),
+                        new QuizGenerationRequest.ConceptInput(
+                                "concept-2",
+                                "Concepto dos",
+                                List.of(new QuizGenerationRequest.ContentInput(
+                                        "Evidencia del segundo concepto.")))));
+        QuizGenerationResponse response = new QuizGenerationResponse(List.of(
+                new QuizGenerationResponse.QuestionDTO(
+                        "concept-1",
+                        "Pregunta relacionada",
+                        "Evidencia del segundo concepto.",
+                        List.of(
+                                new QuizGenerationResponse.OptionDTO("Correcta", true),
+                                new QuizGenerationResponse.OptionDTO("Distractor", false)))));
+
+        when(client.generateStructured(
+                anyString(), anyString(),
+                org.mockito.ArgumentMatchers.anyMap()))
                 .thenReturn(new ObjectMapper().writeValueAsString(response));
 
         assertThrows(

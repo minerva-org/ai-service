@@ -255,6 +255,7 @@ class TaskStoreServiceTest {
                 List.of(new QuizGenerationResponse.QuestionDTO(
                         "concept-1",
                         "Pregunta generada.",
+                        "Contenido verificable.",
                         List.of(
                                 new QuizGenerationResponse.OptionDTO(
                                         "Correcta", true),
@@ -305,6 +306,7 @@ class TaskStoreServiceTest {
                 List.of(new QuizGenerationResponse.QuestionDTO(
                         "concepto-1",
                         "Pregunta generada.",
+                        "Contenido verificable.",
                         List.of(
                                 new QuizGenerationResponse.OptionDTO(
                                         "Correcta", true),

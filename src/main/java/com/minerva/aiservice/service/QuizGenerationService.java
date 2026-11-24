@@ -2,7 +2,6 @@ package com.minerva.aiservice.service;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -37,6 +36,11 @@ public class QuizGenerationService {
                 ## Reglas:
                 - Genera por defecto 10 preguntas si el prompt no indica una cantidad distinta.
                 - Usa verdadero/falso y opcion multiple.
+                - Cada pregunta debe evaluarse ÚNICAMENTE con el contenido del conceptId que declares.
+                - El enunciado, la respuesta correcta y todos los distractores deben poder sustentarse
+                  con el contenido de ese concepto; no uses conocimiento externo ni datos de otros conceptos.
+                - Copia en "evidence" un fragmento literal y suficiente del contenido recibido para demostrar
+                  la relación. No parafrasees "evidence".
                 - Cada pregunta debe tener exactamente una respuesta correcta.
                 - Las opciones correctas deben basarse directamente en el contenido relacionado
                   de los conceptos recibidos.
@@ -44,9 +48,10 @@ public class QuizGenerationService {
                   plausibles y distinguirse claramente de la respuesta correcta.
                 - Conserva el conceptId recibido.
                 - No incluyas conceptos que no tengan contenido relacionado.
+                - Si el contenido recibido no permite crear una pregunta inequívoca, omite ese concepto.
                 - Devuelve exclusivamente JSON valido conforme al esquema.
                 - Ejemplo JSON válido:
-                  {"questions":[{"conceptId":"CONCEPTO-1","question":"¿Qué operación inserta un elemento al inicio?","options":[{"text":"Push","isCorrect":true},{"text":"Pop","isCorrect":false},{"text":"Peek","isCorrect":false},{"text":"Sort","isCorrect":false}]}]}
+                  {"questions":[{"conceptId":"CONCEPTO-1","question":"¿Qué operación inserta un elemento al inicio?","evidence":"Push inserta un elemento al inicio.","options":[{"text":"Push","isCorrect":true},{"text":"Pop","isCorrect":false},{"text":"Peek","isCorrect":false},{"text":"Sort","isCorrect":false}]}]}
                 - Ejemplo JSON inválido:
                   {"questions":[{"conceptId":"CONCEPTO-1","question":"¿Qué operación inserta?","options":[{"text":"Push","esCorrecta":true},{"text":"Pop","esCorrecta":false}]}]}
                 - El segundo ejemplo es inválido porque usa "esCorrecta" en lugar de "isCorrect",
@@ -87,11 +92,12 @@ public class QuizGenerationService {
                 "properties", Map.of(
                         "conceptId", Map.of("type", "string", "minLength", 1),
                         "question", Map.of("type", "string", "minLength", 1),
+                        "evidence", Map.of("type", "string", "minLength", 1),
                         "options", Map.of(
                                 "type", "array",
                                 "items", option,
                                 "minItems", 2)),
-                "required", List.of("conceptId", "question", "options"),
+                "required", List.of("conceptId", "question", "evidence", "options"),
                 "additionalProperties", false);
         return Map.of(
                 "type", "object",
@@ -113,10 +119,12 @@ public class QuizGenerationService {
                     "Model output did not match the quiz schema.");
         }
 
-        Set<String> selectedConceptIds = request.concepts().stream()
-                .map(QuizGenerationRequest.ConceptInput::id)
-                .filter(id -> id != null && !id.isBlank())
-                .collect(Collectors.toSet());
+        Map<String, List<String>> conceptContents = request.concepts().stream()
+                .collect(Collectors.toMap(
+                        QuizGenerationRequest.ConceptInput::id,
+                        concept -> concept.content().stream()
+                                .map(QuizGenerationRequest.ContentInput::description)
+                                .toList()));
 
         for (QuizGenerationResponse.QuestionDTO question : result.questions()) {
             long correctOptions = question.options().stream()
@@ -129,14 +137,30 @@ public class QuizGenerationService {
                 throw new AiModelClient.InvalidModelResponseException(
                         "Each generated question must have exactly one correct option.");
             }
-            if (!selectedConceptIds.contains(question.conceptId())) {
+            List<String> contents = conceptContents.get(question.conceptId());
+            if (contents == null) {
                 LOGGER.log(Level.WARNING,
                         "QUIZ_RESPUESTA_INVALIDA: conceptIdDesconocido={0}",
                         question.conceptId());
                 throw new AiModelClient.InvalidModelResponseException(
                         "Generated question references a concept that was not selected.");
             }
+            String normalizedEvidence = normalize(question.evidence());
+            if (contents.stream().map(QuizGenerationService::normalize)
+                    .noneMatch(content -> content.contains(normalizedEvidence)
+                            || normalizedEvidence.contains(content))) {
+                LOGGER.log(Level.WARNING,
+                        "QUIZ_RESPUESTA_INVALIDA: conceptId={0}, evidenciaNoEncontrada=true",
+                        question.conceptId());
+                throw new AiModelClient.InvalidModelResponseException(
+                        "Generated question evidence was not taken from its concept content.");
+            }
         }
+    }
+
+    private static String normalize(String value) {
+        return value.replaceAll("\\s+", " ").trim().toLowerCase(
+                java.util.Locale.ROOT);
     }
 
     private String toJson(QuizGenerationRequest request) {
