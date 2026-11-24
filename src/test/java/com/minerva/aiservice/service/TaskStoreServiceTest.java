@@ -123,7 +123,7 @@ class TaskStoreServiceTest {
                 () -> store.get("missing"));
 
         TaskDtos.StatusResponse status = null;
-        for (int i = 0; i < 40; i++) {
+        for (int i = 0; i < 200; i++) {
             status = store.get(created.tareaId());
             if ("COMPLETADA".equals(status.estado())
                     || "ERROR".equals(status.estado())) {
@@ -134,6 +134,56 @@ class TaskStoreServiceTest {
 
         assertEquals("COMPLETADA", status.estado());
         assertEquals("Generacion terminada", status.progreso());
+    }
+
+    @Test
+    void marksFatalGenerationResponseAsError() throws Exception {
+        var arbol = mapper.createObjectNode();
+        arbol.put("tipo", "materia");
+        arbol.put("nombre", "Materia");
+        arbol.putArray("hijos");
+
+        var datos = mapper.createObjectNode();
+        datos.put("grupoId", "GRP-1");
+        datos.set("arbol", arbol);
+        datos.putArray("fuentes");
+        datos.putArray("fuentesProcesadas");
+
+        var response = new CurriculumGenerationResponse(
+                "GRP-1",
+                false,
+                arbol,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(new CurriculumGenerationResponse.ErrorDetalle(
+                        "FUENTE_SIN_CONTENIDO",
+                        "No se pudo obtener contenido utilizable.",
+                        true)));
+        when(curriculumService.generate(
+                any(CurriculumGenerationRequest.class),
+                any(org.springframework.web.multipart.MultipartFile[].class),
+                any(Consumer.class)))
+                .thenReturn(response);
+
+        var created = store.create(new TaskDtos.CreateRequest(
+                "CURRICULUM_GENERATE",
+                datos));
+
+        TaskDtos.StatusResponse status = null;
+        for (int i = 0; i < 200; i++) {
+            status = store.get(created.tareaId());
+            if ("ERROR".equals(status.estado())) {
+                break;
+            }
+            TimeUnit.MILLISECONDS.sleep(25);
+        }
+
+        assertEquals("ERROR", status.estado());
+        assertEquals(
+                "No se pudo obtener contenido utilizable.",
+                status.error());
+        assertEquals(null, status.resultado());
     }
 
     @Test
@@ -160,7 +210,7 @@ class TaskStoreServiceTest {
                 datos));
 
         TaskDtos.StatusResponse status = null;
-        for (int i = 0; i < 40; i++) {
+        for (int i = 0; i < 200; i++) {
             status = store.get(created.tareaId());
             if ("ERROR".equals(status.estado())) {
                 break;
