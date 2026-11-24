@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.text.Normalizer;
 import java.util.Set;
 import java.util.UUID;
@@ -183,6 +184,7 @@ public class CurriculumGenerationService {
             generatedTree = objectMapper.reader()
                     .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
                     .readTree(raw);
+            normalizeNodeKeys(generatedTree);
         } catch (JacksonException exception) {
             LOGGER.log(Level.WARNING,
                     "RESPUESTA_MODELO: jsonInvalido, respuestaChars={0}, tipoError={1}",
@@ -342,9 +344,42 @@ public class CurriculumGenerationService {
                 Agrega unidades, temas o conceptos nuevos solo cuando la fuente los
                 identifique claramente y no exista una coincidencia equivalente.
                 Devuelve el arbol completo actualizado.
+                Usa exactamente las claves "tipo", "nombre", "contenido" y "hijos".
+                No agregues espacios al final de los nombres de claves.
                 No persistiras cambios.
                 No debes devolver explicaciones fuera del JSON.
                 """;
+    }
+
+    private static void normalizeNodeKeys(JsonNode node) {
+        if (node == null) {
+            return;
+        }
+        if (node.isArray()) {
+            for (JsonNode item : node) {
+                normalizeNodeKeys(item);
+            }
+            return;
+        }
+        if (!node.isObject()) {
+            return;
+        }
+
+        ObjectNode object = (ObjectNode) node;
+        List<Map.Entry<String, JsonNode>> fields =
+                new ArrayList<>();
+        for (var field : object.properties()) {
+            fields.add(field);
+        }
+
+        for (var field : fields) {
+            String normalized = field.getKey().trim();
+            if (!normalized.equals(field.getKey())) {
+                object.remove(field.getKey());
+                object.set(normalized, field.getValue());
+            }
+            normalizeNodeKeys(field.getValue());
+        }
     }
 
     private MergeResult mergeTemporary(JsonNode original, JsonNode generated) {
