@@ -283,6 +283,44 @@ class TaskStoreServiceTest {
     }
 
     @Test
+    void createsQuizTaskFromCurriculumCatalogShape() {
+        var datos = mapper.createObjectNode();
+        datos.put("prompt", "Genera una pregunta.");
+        var arbol = datos.putObject("arbol");
+        arbol.put("idGrupo", "grupo-1");
+        var unidad = arbol.putArray("unidades").addObject();
+        unidad.put("id", "unidad-1");
+        unidad.put("nombre", "Unidad");
+        var tema = unidad.putArray("temas").addObject();
+        tema.put("id", "tema-1");
+        tema.put("nombre", "Tema");
+        var concepto = tema.putArray("conceptos").addObject();
+        concepto.put("id", "concepto-1");
+        concepto.put("nombre", "Concepto");
+        concepto.putArray("contenidos")
+                .addObject()
+                .put("descripcion", "Contenido verificable.");
+
+        var response = new QuizGenerationResponse(
+                List.of(new QuizGenerationResponse.QuestionDTO(
+                        "concepto-1",
+                        "Pregunta generada.",
+                        List.of(
+                                new QuizGenerationResponse.OptionDTO(
+                                        "Correcta", true),
+                                new QuizGenerationResponse.OptionDTO(
+                                        "Distractor", false)))));
+        when(quizService.generate(any(QuizGenerationRequest.class)))
+                .thenReturn(response);
+
+        var created = store.create(new TaskDtos.CreateRequest(
+                "QUIZ_GENERATE",
+                datos));
+
+        assertNotNull(created.tareaId());
+    }
+
+    @Test
     void deleteMakesTaskUnavailable() {
         var datos = mapper.createObjectNode();
         var arbol = datos.putObject("arbol");

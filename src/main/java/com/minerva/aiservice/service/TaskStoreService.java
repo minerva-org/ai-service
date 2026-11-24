@@ -218,10 +218,15 @@ public class TaskStoreService {
         if (node == null || !node.isObject()) {
             return;
         }
-        if ("concepto".equalsIgnoreCase(text(node, "tipo"))) {
+        boolean isConcept = "concepto".equalsIgnoreCase(text(node, "tipo"))
+                || (node.has("contenidos") && node.get("contenidos").isArray());
+        if (isConcept) {
             String id = text(node, "id");
             String name = text(node, "nombre");
             JsonNode contenido = node.get("contenido");
+            if (contenido == null) {
+                contenido = node.get("contenidos");
+            }
             if (!id.isBlank() && !name.isBlank()
                     && contenido != null && contenido.isArray()
                     && !contenido.isEmpty()) {
@@ -242,11 +247,20 @@ public class TaskStoreService {
                                 id, name, content));
             }
         }
-        JsonNode hijos = node.get("hijos");
-        if (hijos != null && hijos.isArray()) {
-            for (JsonNode child : hijos) {
-                collectEligibleQuizConcepts(child, concepts);
-            }
+        collectQuizChildren(node.get("hijos"), concepts);
+        collectQuizChildren(node.get("unidades"), concepts);
+        collectQuizChildren(node.get("temas"), concepts);
+        collectQuizChildren(node.get("conceptos"), concepts);
+    }
+
+    private void collectQuizChildren(
+            JsonNode children,
+            List<QuizGenerationRequest.ConceptInput> concepts) {
+        if (children == null || !children.isArray()) {
+            return;
+        }
+        for (JsonNode child : children) {
+            collectEligibleQuizConcepts(child, concepts);
         }
     }
 
