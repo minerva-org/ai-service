@@ -3,6 +3,8 @@ package com.minerva.aiservice.service;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Locale;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -23,6 +25,8 @@ public class PdfTextExtractor {
 
     private static final byte[] PDF_SIGNATURE = "%PDF-".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
     private static final int SIGNATURE_SEARCH_LIMIT = 1024;
+    private static final Logger LOGGER =
+            Logger.getLogger(PdfTextExtractor.class.getName());
 
     private final AiServiceProperties properties;
 
@@ -54,6 +58,9 @@ public class PdfTextExtractor {
                 throw new InvalidPdfException("Encrypted PDFs are not supported.");
             }
             String text = new PDFTextStripper().getText(document).strip();
+            LOGGER.log(Level.INFO,
+                    "EXTRACCION_PDF: pdfs={0}, paginas={1}, caracteresExtraidos={2}",
+                    new Object[]{1, document.getNumberOfPages(), text.length()});
             if (text.isBlank()) {
                 throw new NoExtractableTextException("PDF has no selectable text; OCR is not supported.");
             }

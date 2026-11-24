@@ -55,6 +55,55 @@ Requiere `X-AI-Service-Key`. Recibe `prompt` y `screenContext` ya autorizado y a
 
 La clave de servicio es solo para comunicación backend-a-backend. Los usuarios finales no reciben esta clave. Minerva mantiene la autenticación y autorización por materia, grupo, plantel e institución.
 
+### Generar cambios temporales de currículo
+
+`POST /curriculum/generate`
+
+Requiere `X-AI-Service-Key` y `multipart/form-data` con:
+
+- `request`: JSON `application/json` con el grupo, el árbol temporal completo y las fuentes.
+- `files`: uno o más PDF asociados a las fuentes nuevas.
+
+Ejemplo de `request`:
+
+```json
+{
+  "grupoId": "GRP-1",
+  "materiaNombre": "Ingenieria de Software",
+  "arbol": {
+    "tipo": "materia",
+    "nombre": "Ingenieria de Software",
+    "origen": "materia",
+    "revisionEstado": "original",
+    "hijos": []
+  },
+  "fuentes": [
+    {
+      "documentoId": "DOC-101",
+      "checksumSha256": "abc123",
+      "nombre": "guia-scrum.pdf"
+    }
+  ],
+  "fuentesProcesadas": [],
+  "modoFusion": "conservadora"
+}
+```
+
+La operación no persiste cambios. Devuelve `persistido: false` y un árbol temporal completo.
+
+Los nodos y contenidos agregados por IA incluyen:
+
+```json
+{
+  "origen": "ia",
+  "revisionEstado": "pendiente_revision"
+}
+```
+
+La IA conserva los nodos originales y solo agrega o alimenta contenido. No elimina, desactiva ni reemplaza nodos existentes.
+
+Solo se procesan fuentes que no aparezcan en `fuentesProcesadas`. Si una fuente ya fue procesada, debe volver a subirse para formar parte de una nueva ejecución.
+
 ## Laboratorio de extraccion (DEV)
 
 El frontend accede mediante Minerva API; no publiques estos endpoints directamente.

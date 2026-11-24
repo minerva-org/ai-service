@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Map;
 import java.net.http.HttpClient;
 import java.net.http.HttpTimeoutException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.springframework.stereotype.Service;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -17,6 +19,8 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class OllamaClient {
 
+    private static final Logger LOGGER =
+            Logger.getLogger(OllamaClient.class.getName());
     private final AiServiceProperties properties;
     private final ObjectMapper objectMapper;
         private final RestClient restClient;
@@ -73,9 +77,18 @@ public class OllamaClient {
                     Map.of("role", "user", "content", userPrompt)),
                 "format", format,
                 "stream", false,
-                "think", false);
+                "think", false,
+                "options", Map.of(
+                        "temperature", 0.1,
+                        "num_ctx", 8192,
+                        "num_predict", 2048));
 
         final OllamaChatResponse response;
+        long startedAt = System.nanoTime();
+        LOGGER.log(Level.INFO,
+                "OLLAMA_SOLICITUD: modelo={0}, promptChars={1}, systemChars={2}, formato={3}",
+                new Object[]{properties.ollama().model(), userPrompt.length(), systemPrompt.length(),
+                        format instanceof Map ? "json_schema" : String.valueOf(format)});
         try {
             response = restClient.post()
                     .uri("/api/chat")
@@ -83,13 +96,21 @@ public class OllamaClient {
                     .retrieve()
                     .body(OllamaChatResponse.class);
         } catch (RestClientException exception) {
+            if (hasTimeoutCause(exception)) {
+                throw new OllamaTimeoutException(exception);
+            }
             throw new OllamaUnavailableException(exception);
         }
 
         if (response == null || response.message() == null || response.message().content() == null) {
             throw new InvalidModelResponseException("Ollama returned an empty chat response.");
         }
-        return response.message().content();
+        String content = response.message().content();
+        LOGGER.log(Level.INFO,
+                "OLLAMA_RESPUESTA: modelo={0}, respuestaChars={1}, duracionMs={2}",
+                new Object[]{properties.ollama().model(), content.length(),
+                        (System.nanoTime() - startedAt) / 1_000_000});
+        return content;
     }
 
     private boolean hasTimeoutCause(Throwable cause) {
