@@ -4,8 +4,12 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.text.Normalizer;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -25,6 +29,8 @@ import tools.jackson.databind.node.ObjectNode;
 @RequiredArgsConstructor
 public class CurriculumGenerationService {
 
+    private static final Logger LOGGER =
+            Logger.getLogger(CurriculumGenerationService.class.getName());
     private final PdfTextExtractor pdfTextExtractor;
     private final OllamaClient ollamaClient;
     private final ObjectMapper objectMapper;
@@ -32,6 +38,13 @@ public class CurriculumGenerationService {
     public CurriculumGenerationResponse generate(
             CurriculumGenerationRequest request,
             MultipartFile[] files) {
+        return generate(request, files, progress -> {});
+    }
+
+    public CurriculumGenerationResponse generate(
+            CurriculumGenerationRequest request,
+            MultipartFile[] files,
+            Consumer<String> progress) {
 
         if (request == null || request.arbol() == null
                 || !request.arbol().isObject()) {
@@ -91,16 +104,30 @@ public class CurriculumGenerationService {
             unusedFiles.remove(file);
 
             try {
+                progress.accept("Extrayendo texto de " + fuente.nombre());
                 String text = pdfTextExtractor.extract(file);
                 if (text == null || text.isBlank()) {
                     sourceResults.add(failedSource(fuente,
                             "La fuente no contiene texto legible."));
                     continue;
                 }
+                progress.accept("Reconociendo encabezados y fragmentos relevantes");
+                String relevantText =
+                        CurriculumSourceIndex.selectRelevantFragments(
+                                text,
+                                request.arbol());
+                if (relevantText.isBlank()) {
+                    sourceResults.add(failedSource(fuente,
+                            "La fuente no contiene texto curricular relevante."));
+                    continue;
+                }
                 sourceTexts.add(
                         "Fuente: " + fuente.nombre() + "\n"
                                 + "documentoId: " + fuente.documentoId() + "\n"
-                                + "<document>\n" + text + "\n</document>");
+                                + "<document>\n" + relevantText + "\n</document>");
+                LOGGER.log(Level.INFO,
+                        "FUENTE_PROCESADA: documentoId={0}, textoExtraidoChars={1}, textoSeleccionadoChars={2}",
+                        new Object[]{fuente.documentoId(), text.length(), relevantText.length()});
                 newlyProcessed.add(new CurriculumGenerationResponse.FuenteProcesada(
                         fuente.documentoId(),
                         fuente.checksumSha256()));
@@ -115,6 +142,11 @@ public class CurriculumGenerationService {
             } catch (RuntimeException exception) {
                 sourceResults.add(failedSource(fuente,
                         "La fuente no pudo analizarse."));
+                LOGGER.log(Level.WARNING,
+                        "FUENTE_FALLIDA: documentoId={0}, tipoError={1}, mensaje={2}",
+                        new Object[]{fuente.documentoId(),
+                                exception.getClass().getSimpleName(),
+                                exception.getMessage()});
             }
         }
 
@@ -139,6 +171,7 @@ public class CurriculumGenerationService {
 
         String system = threeLayerSystemPrompt();
         String user = threeLayerContextPrompt(request, sourceTexts);
+        progress.accept("Consultando el modelo y preparando el arbol actualizado");
         String raw = ollamaClient.generateStructured(
                 system,
                 user,
@@ -146,10 +179,15 @@ public class CurriculumGenerationService {
 
         JsonNode generatedTree;
         try {
+            progress.accept("Validando la respuesta del modelo");
             generatedTree = objectMapper.reader()
                     .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
                     .readTree(raw);
         } catch (JacksonException exception) {
+            LOGGER.log(Level.WARNING,
+                    "RESPUESTA_MODELO: jsonInvalido, respuestaChars={0}, tipoError={1}",
+                    new Object[]{raw == null ? 0 : raw.length(),
+                            exception.getClass().getSimpleName()});
             throw new OllamaClient.InvalidModelResponseException(
                     "Ollama returned invalid JSON.", exception);
         }
@@ -157,16 +195,26 @@ public class CurriculumGenerationService {
         List<String> generatedErrors =
                 CurriculumGenerationSchema.validate(generatedTree);
         if (!generatedErrors.isEmpty()) {
+            LOGGER.log(Level.WARNING,
+                    "RESPUESTA_MODELO: contratoInvalido, errores={0}",
+                    generatedErrors.size());
             throw new InvalidCurriculumOutputException(
                     "El modelo devolvio un arbol curricular invalido.",
                     generatedErrors);
         }
 
+        progress.accept("Fusionando cambios conservadores con el arbol actual");
         MergeResult mergeResult = mergeTemporary(request.arbol(), generatedTree);
+        LOGGER.log(Level.INFO,
+                "MERGE_CURRICULO: nodosGenerados={0}, nodosAgregados={1}, contenidosAgregados={2}, nombresGenerados={3}",
+                new Object[]{countNodes(generatedTree),
+                        mergeResult.nodosAgregados(),
+                        mergeResult.contenidosAgregados(),
+                        collectNodeNames(generatedTree)});
         if (mergeResult.nodosAgregados() == 0
                 && mergeResult.contenidosAgregados() == 0) {
             throw new NoRelevantCurriculumException(
-                    "No se encontro informacion curricular relevante en las fuentes nuevas.");
+                    "Ollama devolvio un arbol valido, pero el merge no agrego nodos ni contenidos nuevos.");
         }
         for (int i = 0; i < sourceResults.size(); i++) {
             CurriculumGenerationResponse.FuenteResultado result =
@@ -252,8 +300,18 @@ public class CurriculumGenerationService {
                 - Conserva todos los nodos persistidos.
                 - Conserva nombres manuales.
                 - No elimines unidades, temas ni conceptos.
+                - No crees ni dupliques la materia raiz.
+                - No conviertas el nombre de la materia en una unidad, tema o concepto.
+                - Materia solo puede aparecer una vez como raiz y debe conservar el nombre recibido.
+                - No infieras una unidad, tema o concepto nuevo solo porque repita el nombre de la materia.
                 - No inventes informacion no presente en las fuentes.
                 - Agrega solo informacion curricular relevante.
+                - Para conceptos existentes que tengan informacion verificable en las fuentes,
+                  agrega entre 2 y 5 descripciones breves a su campo "contenido".
+                - Cada elemento de "contenido" debe ser un objeto con
+                  "descripcion" como texto, no una cadena directa.
+                - Si una fuente trata conceptos presentes en el arbol, relaciona la
+                  informacion especifica con esos conceptos por nombre y jerarquia.
                 - No fusiones nodos por nombre a menos que tengan el mismo significado evidente.
                 - Marca cada nodo agregado con origen "ia".
                 - Marca cada nodo agregado con revisionEstado "pendiente_revision".
@@ -267,6 +325,7 @@ public class CurriculumGenerationService {
         return """
                 Contexto:
                 - grupoId: """ + request.grupoId() + """
+                - materiaNombre: """ + request.materiaNombre() + """
                 - modoFusion: conservadora
 
                 Arbol actual:
@@ -278,7 +337,10 @@ public class CurriculumGenerationService {
                 Tarea:
                 Analiza solo las fuentes nuevas.
                 Detecta unidades, temas y conceptos relevantes.
-                Agrega contenido breve y verificable.
+                Relaciona primero los nombres del arbol con las secciones de las fuentes.
+                Agrega contenido breve y verificable a los conceptos coincidentes.
+                Agrega unidades, temas o conceptos nuevos solo cuando la fuente los
+                identifique claramente y no exista una coincidencia equivalente.
                 Devuelve el arbol completo actualizado.
                 No persistiras cambios.
                 No debes devolver explicaciones fuera del JSON.
@@ -288,16 +350,114 @@ public class CurriculumGenerationService {
     private MergeResult mergeTemporary(JsonNode original, JsonNode generated) {
         ObjectNode merged = (ObjectNode) objectMapper.valueToTree(original);
         MergeCounter counter = new MergeCounter();
-        mergeNode(merged, generated, counter, true);
+        mergeNode(merged, generated, counter, true, getMateriaNombre(original));
         return new MergeResult(merged, counter.nodosAgregados,
                 counter.contenidosAgregados);
+    }
+
+    private int countNodes(JsonNode node) {
+        if (node == null || !node.isObject()) {
+            return 0;
+        }
+        int count = 1;
+        JsonNode children = node.get("hijos");
+        if (children != null && children.isArray()) {
+            for (JsonNode child : children) {
+                count += countNodes(child);
+            }
+        }
+        return count;
+    }
+
+    private String getMateriaNombre(JsonNode original) {
+        return text(original, "nombre");
+    }
+
+    private JsonNode compactCurriculumTree(JsonNode node) {
+        if (node == null || !node.isObject()) {
+            return objectMapper.createObjectNode();
+        }
+
+        ObjectNode compact = objectMapper.createObjectNode();
+        String type = text(node, "tipo");
+        String name = text(node, "nombre");
+        if (!type.isBlank()) {
+            compact.put("tipo", type);
+        }
+        if (!name.isBlank()) {
+            compact.put("nombre", name);
+        }
+
+        JsonNode estado = node.get("estadoConcepto");
+        if (estado != null && estado.isString()) {
+            compact.put("estadoConcepto", estado.asString());
+        }
+
+        ArrayNode contenido = compact.putArray("contenido");
+        JsonNode originalContent = node.get("contenido");
+        if (originalContent != null && originalContent.isArray()) {
+            int included = 0;
+            for (JsonNode item : originalContent) {
+                if (included >= 3) {
+                    break;
+                }
+                String description = text(item, "descripcion");
+                if (description.isBlank()) {
+                    continue;
+                }
+                if (description.length() > 160) {
+                    description = description.substring(0, 160).trim();
+                }
+                contenido.addObject().put("descripcion", description);
+                included++;
+            }
+        }
+
+        ArrayNode hijos = compact.putArray("hijos");
+        JsonNode originalChildren = node.get("hijos");
+        if (originalChildren != null && originalChildren.isArray()) {
+            for (JsonNode child : originalChildren) {
+                hijos.add(compactCurriculumTree(child));
+            }
+        }
+        return compact;
+    }
+
+    private String collectNodeNames(JsonNode node) {
+        LinkedHashSet<String> names = new LinkedHashSet<>();
+        collectNodeNames(node, names);
+        if (names.isEmpty()) {
+            return "";
+        }
+        List<String> limited = new ArrayList<>(names);
+        if (limited.size() > 20) {
+            limited = limited.subList(0, 20);
+        }
+        return String.join(" | ", limited);
+    }
+
+    private void collectNodeNames(JsonNode node, Set<String> names) {
+        if (node == null || !node.isObject()) {
+            return;
+        }
+        String name = text(node, "nombre");
+        if (!name.isBlank()) {
+            names.add(name);
+        }
+        JsonNode children = node.get("hijos");
+        if (children != null && children.isArray()) {
+            for (JsonNode child : children) {
+                collectNodeNames(child, names);
+            }
+        }
     }
 
     private void mergeNode(
             ObjectNode original,
             JsonNode generated,
             MergeCounter counter,
-            boolean isRoot) {
+            boolean isRoot,
+            String materiaNombre) {
         JsonNode generatedChildren = generated.get("hijos");
         if (generatedChildren == null || !generatedChildren.isArray()) {
             mergeContent(original, generated, counter);
@@ -308,7 +468,15 @@ public class CurriculumGenerationService {
         ArrayNode originalChildren = ensureChildren(original);
         for (JsonNode generatedChild : generatedChildren) {
             String generatedName = text(generatedChild, "nombre");
+            String generatedType = text(generatedChild, "tipo");
             if (generatedName.isBlank()) {
+                continue;
+            }
+            if ("materia".equalsIgnoreCase(generatedType)) {
+                continue;
+            }
+            if (!"materia".equalsIgnoreCase(generatedType)
+                    && normalizeName(generatedName).equals(normalizeName(materiaNombre))) {
                 continue;
             }
             JsonNode existing = findChildByNameAndType(originalChildren, generatedChild);
@@ -321,7 +489,7 @@ public class CurriculumGenerationService {
             }
 
             ObjectNode existingNode = (ObjectNode) existing;
-            mergeNode(existingNode, generatedChild, counter, false);
+            mergeNode(existingNode, generatedChild, counter, false, materiaNombre);
         }
     }
 
@@ -357,6 +525,9 @@ public class CurriculumGenerationService {
         if (changed) {
             original.put("revisionEstado", "modificado");
             original.put("dirty", true);
+            if ("concepto".equalsIgnoreCase(text(original, "tipo"))) {
+                original.put("estadoConcepto", "con_contenido");
+            }
         }
     }
 
@@ -436,9 +607,11 @@ public class CurriculumGenerationService {
             if (child == null || !child.isObject()) {
                 continue;
             }
-            if (candidateName.equalsIgnoreCase(text(child, "nombre"))
+            String childName = normalizeName(text(child, "nombre"));
+            String typeMatches = text(child, "tipo");
+            if (normalizeName(candidateName).equals(childName)
                     && (candidateType.isBlank()
-                            || candidateType.equalsIgnoreCase(text(child, "tipo")))) {
+                            || candidateType.equalsIgnoreCase(typeMatches))) {
                 return child;
             }
         }
@@ -446,12 +619,25 @@ public class CurriculumGenerationService {
     }
 
     private boolean containsDescription(ArrayNode content, String description) {
+        String normalizedDescription = normalizeName(description);
         for (JsonNode item : content) {
-            if (description.equalsIgnoreCase(text(item, "descripcion"))) {
+            if (normalizedDescription.equals(normalizeName(text(item, "descripcion")))) {
                 return true;
             }
         }
         return false;
+    }
+
+    private String normalizeName(String value) {
+        if (value == null) {
+            return "";
+        }
+        return Normalizer.normalize(value, Normalizer.Form.NFD)
+                .replaceAll("\\p{InCombiningDiacriticalMarks}+", "")
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", " ")
+                .trim()
+                .replaceAll("\\s+", " ");
     }
 
     private String text(JsonNode node, String field) {

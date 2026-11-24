@@ -21,12 +21,15 @@ public class ServiceKeyFilter extends OncePerRequestFilter {
 
     private static final String HEADER_NAME = "X-AI-Service-Key";
     private static final String HEALTH_PATH = "/health";
+    private static final String V1_HEALTH_PATH = "/v1/salud";
 
     private final AiServiceProperties properties;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return "GET".equals(request.getMethod()) && HEALTH_PATH.equals(request.getRequestURI());
+        return "GET".equals(request.getMethod())
+                && (HEALTH_PATH.equals(request.getRequestURI())
+                        || V1_HEALTH_PATH.equals(request.getRequestURI()));
     }
 
     @Override

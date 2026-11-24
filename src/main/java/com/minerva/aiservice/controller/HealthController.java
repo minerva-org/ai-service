@@ -1,5 +1,7 @@
 package com.minerva.aiservice.controller;
 
+import java.util.Map;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,5 +32,26 @@ public class HealthController {
         }
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(new HealthResponse("DOWN", properties.ollama().model()));
+    }
+
+    @GetMapping("/v1/salud")
+    public ResponseEntity<Map<String, Object>> healthV1() {
+        try {
+            if (ollamaClient.isConfiguredModelAvailable()) {
+                return ResponseEntity.ok(Map.of(
+                        "motor", "ollama",
+                        "ok", true,
+                        "modelo", properties.ollama().model()));
+            }
+        } catch (OllamaClient.OllamaUnavailableException ignored) {
+            return ResponseEntity.ok(Map.of(
+                    "motor", "ollama",
+                    "ok", false,
+                    "modelo", properties.ollama().model()));
+        }
+        return ResponseEntity.ok(Map.of(
+                "motor", "ollama",
+                "ok", false,
+                "modelo", properties.ollama().model()));
     }
 }

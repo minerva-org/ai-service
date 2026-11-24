@@ -180,6 +180,98 @@ class CurriculumGenerationServiceTest {
     }
 
     @Test
+    void mergesExistingConceptWhenNamesDifferOnlyByAccents() throws Exception {
+        JsonNode original = objectMapper.readTree("""
+                {
+                  "tipo": "materia",
+                  "nombre": "Matematicas",
+                  "hijos": [
+                    {
+                      "tipo": "unidad",
+                      "nombre": "Estructuras",
+                      "hijos": [
+                        {
+                          "tipo": "tema",
+                          "nombre": "Recursividad",
+                          "hijos": [
+                            {
+                              "tipo": "concepto",
+                              "nombre": "Factorial",
+                              "estadoConcepto": "sin_contenido",
+                              "contenido": []
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """);
+
+        String generated = """
+                {
+                  "tipo": "materia",
+                  "nombre": "Matemáticas",
+                  "hijos": [
+                    {
+                      "tipo": "unidad",
+                      "nombre": "Estructuras",
+                      "hijos": [
+                        {
+                          "tipo": "tema",
+                          "nombre": "Recursividad",
+                          "hijos": [
+                            {
+                              "tipo": "concepto",
+                              "nombre": "Factorial",
+                              "estadoConcepto": "sin_contenido",
+                              "contenido": [
+                                {
+                                  "descripcion": "El factorial de cero es uno."
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """;
+
+        CurriculumGenerationRequest request = new CurriculumGenerationRequest(
+                "GRP-1",
+                original,
+                List.of(new CurriculumGenerationRequest.FuenteNueva(
+                        "DOC-1",
+                        "checksum",
+                        "recursividad.pdf")),
+                List.of(),
+                "conservadora");
+
+        when(pdfTextExtractor.extract(any(MultipartFile.class)))
+                .thenReturn("El factorial de cero es uno.");
+        when(ollamaClient.generateStructured(anyString(), anyString(), anyMap()))
+                .thenReturn(generated);
+
+        CurriculumGenerationResponse response = service.generate(
+                request,
+                new MockMultipartFile[]{
+                        new MockMultipartFile(
+                                "files",
+                                "recursividad.pdf",
+                                "application/pdf",
+                                new byte[]{1})});
+
+        JsonNode factorial = response.arbol()
+                .at("/hijos/0/hijos/0/hijos/0");
+        assertEquals("con_contenido", factorial.get("estadoConcepto").asString());
+        assertEquals(1, factorial.at("/contenido").size());
+        assertEquals("El factorial de cero es uno.",
+                factorial.at("/contenido/0/descripcion").asString());
+    }
+
+    @Test
     void rejectsAlreadyProcessedSourceWithoutCallingModel() {
         JsonNode original;
         try {
@@ -261,7 +353,7 @@ class CurriculumGenerationServiceTest {
                 "conservadora");
 
         when(pdfTextExtractor.extract(any(MultipartFile.class)))
-                .thenReturn("Texto didactico.");
+                .thenReturn("Materia didactica.");
         when(ollamaClient.generateStructured(anyString(), anyString(), anyMap()))
                 .thenReturn(generated);
 

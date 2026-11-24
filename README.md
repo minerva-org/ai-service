@@ -69,6 +69,7 @@ Ejemplo de `request`:
 ```json
 {
   "grupoId": "GRP-1",
+  "materiaNombre": "Ingenieria de Software",
   "arbol": {
     "tipo": "materia",
     "nombre": "Ingenieria de Software",
