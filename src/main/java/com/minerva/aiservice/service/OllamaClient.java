@@ -81,7 +81,7 @@ public class OllamaClient {
                 "options", Map.of(
                         "temperature", 0.1,
                         "num_ctx", 32768,
-                        "num_predict", 8192));
+                        "num_predict", 4096));
 
         final OllamaChatResponse response;
         long startedAt = System.nanoTime();

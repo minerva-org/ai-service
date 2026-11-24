@@ -3,6 +3,7 @@ package com.minerva.aiservice.service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import tools.jackson.databind.JsonNode;
 
@@ -12,58 +13,57 @@ final class CurriculumGenerationSchema {
     }
 
     static Map<String, Object> schema() {
-        Map<String, Object> content = Map.of(
+        Map<String, Object> contentItem = Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "conceptoId", Map.of("type", "string", "minLength", 1),
+                        "descripcion", Map.of("type", "string", "minLength", 1)),
+                "required", List.of("conceptoId", "descripcion"),
+                "additionalProperties", false);
+
+        Map<String, Object> newNodeContent = Map.of(
                 "type", "object",
                 "properties", Map.of(
                         "descripcion", Map.of("type", "string", "minLength", 1)),
                 "required", List.of("descripcion"),
                 "additionalProperties", false);
 
-        Map<String, Object> node = Map.of(
+        Map<String, Object> newNode = Map.of(
                 "type", "object",
                 "properties", Map.of(
-                        "id", Map.of("type", "string", "minLength", 1),
-                        "tipo", Map.of("type", "string", "enum", List.of("materia", "unidad", "tema", "concepto")),
+                        "tipo", Map.of("type", "string",
+                                "enum", List.of("unidad", "tema", "concepto")),
                         "nombre", Map.of("type", "string", "minLength", 1),
-                        "origen", Map.of("type", "string", "enum", List.of("materia", "usuario", "ia")),
-                        "revisionEstado", Map.of("type", "string",
-                                "enum", List.of("original", "nuevo", "modificado", "pendiente_revision")),
-                        "estadoConcepto", Map.of("type", "string",
-                                "enum", List.of("visto", "planeado", "con_contenido", "sin_contenido")),
+                        "parentId", Map.of("type", "string", "minLength", 1),
                         "contenido", Map.of(
                                 "type", "array",
-                                "items", content),
-                        "hijos", Map.of(
-                                "type", "array",
-                                "items", Map.of("type", "object",
-                                        "properties", Map.of(
-                                                "id", Map.of("type", "string"),
-                                                "tipo", Map.of("type", "string"),
-                                                "nombre", Map.of("type", "string"),
-                                                "origen", Map.of("type", "string"),
-                                                "revisionEstado", Map.of("type", "string"),
-                                                "estadoConcepto", Map.of("type", "string"),
-                                                "contenido", Map.of("type", "array"),
-                                                "hijos", Map.of("type", "array")),
-                                        "required", List.of("tipo", "nombre", "hijos"),
-                                        "additionalProperties", true))),
-                "required", List.of("tipo", "nombre", "hijos"),
+                                "items", newNodeContent)),
+                "required", List.of("tipo", "nombre", "parentId"),
                 "additionalProperties", false);
 
-        return node;
+        return Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "contenidos", Map.of(
+                                "type", "array",
+                                "items", contentItem),
+                        "nodos", Map.of(
+                                "type", "array",
+                                "items", newNode)),
+                "required", List.of("contenidos", "nodos"),
+                "additionalProperties", false);
     }
 
-    static List<String> validate(JsonNode tree) {
+    static List<String> validateTree(JsonNode tree) {
         List<String> errors = new ArrayList<>();
-        if (tree == null || !tree.isObject()) {
-            errors.add("$.arbol: se esperaba un objeto.");
-            return errors;
-        }
-        validateNode(tree, "$.arbol", errors);
+        validateTreeNode(tree, "$.arbol", errors);
         return List.copyOf(errors);
     }
 
-    private static void validateNode(JsonNode node, String path, List<String> errors) {
+    private static void validateTreeNode(
+            JsonNode node,
+            String path,
+            List<String> errors) {
         if (node == null || !node.isObject()) {
             errors.add(path + ": se esperaba un objeto.");
             return;
@@ -77,29 +77,87 @@ final class CurriculumGenerationSchema {
             errors.add(path + ".nombre: se requiere texto no vacio.");
         }
         JsonNode hijos = node.get("hijos");
-        if (hijos != null && hijos.isArray()) {
+        if (hijos != null && !hijos.isArray()) {
+            errors.add(path + ".hijos: se esperaba una lista.");
+        } else if (hijos != null) {
             for (int i = 0; i < hijos.size(); i++) {
-                validateNode(hijos.get(i), path + ".hijos[" + i + "]", errors);
+                validateTreeNode(hijos.get(i),
+                        path + ".hijos[" + i + "]",
+                        errors);
             }
         }
-        JsonNode contenido = node.get("contenido");
-        if (contenido != null) {
-            if (!contenido.isArray()) {
-                errors.add(path + ".contenido: se esperaba una lista.");
-            } else {
-                for (int i = 0; i < contenido.size(); i++) {
-                    JsonNode item = contenido.get(i);
-                    if (item == null || !item.isObject()) {
-                        errors.add(path + ".contenido[" + i + "]: se esperaba un objeto.");
-                        continue;
-                    }
-                    JsonNode descripcion = item.get("descripcion");
-                    if (descripcion == null || !descripcion.isString()
-                            || descripcion.asString().isBlank()) {
-                        errors.add(path + ".contenido[" + i + "].descripcion: se requiere texto no vacio.");
+    }
+
+    static List<String> validate(JsonNode operations) {
+        List<String> errors = new ArrayList<>();
+        if (operations == null || !operations.isObject()) {
+            errors.add("$.operaciones: se esperaba un objeto.");
+            return errors;
+        }
+
+        JsonNode contenidos = operations.get("contenidos");
+        if (contenidos == null || !contenidos.isArray()) {
+            errors.add("$.operaciones.contenidos: se esperaba una lista.");
+        } else {
+            for (int i = 0; i < contenidos.size(); i++) {
+                JsonNode item = contenidos.get(i);
+                String path = "$.operaciones.contenidos[" + i + "]";
+                if (item == null || !item.isObject()) {
+                    errors.add(path + ": se esperaba un objeto.");
+                    continue;
+                }
+                requireText(item, "conceptoId", path, errors);
+                requireText(item, "descripcion", path, errors);
+            }
+        }
+
+        JsonNode nodos = operations.get("nodos");
+        if (nodos == null || !nodos.isArray()) {
+            errors.add("$.operaciones.nodos: se esperaba una lista.");
+        } else {
+            Set<String> types = Set.of("unidad", "tema", "concepto");
+            for (int i = 0; i < nodos.size(); i++) {
+                JsonNode item = nodos.get(i);
+                String path = "$.operaciones.nodos[" + i + "]";
+                if (item == null || !item.isObject()) {
+                    errors.add(path + ": se esperaba un objeto.");
+                    continue;
+                }
+                requireText(item, "tipo", path, errors);
+                requireText(item, "nombre", path, errors);
+                requireText(item, "parentId", path, errors);
+                JsonNode type = item.get("tipo");
+                if (type != null && type.isString()
+                        && !types.contains(type.asString())) {
+                    errors.add(path + ".tipo: tipo de nodo no permitido.");
+                }
+                JsonNode contenido = item.get("contenido");
+                if (contenido != null && !contenido.isArray()) {
+                    errors.add(path + ".contenido: se esperaba una lista.");
+                } else if (contenido != null) {
+                    for (int j = 0; j < contenido.size(); j++) {
+                        JsonNode content = contenido.get(j);
+                        if (content == null || !content.isObject()) {
+                            errors.add(path + ".contenido[" + j + "]: se esperaba un objeto.");
+                            continue;
+                        }
+                        requireText(content, "descripcion",
+                                path + ".contenido[" + j + "]", errors);
                     }
                 }
             }
+        }
+        return List.copyOf(errors);
+    }
+
+    private static void requireText(
+            JsonNode object,
+            String field,
+            String path,
+            List<String> errors) {
+        JsonNode value = object.get(field);
+        if (value == null || !value.isString() || value.asString().isBlank()) {
+            errors.add(path + "." + field + ": se requiere texto no vacio.");
         }
     }
 }

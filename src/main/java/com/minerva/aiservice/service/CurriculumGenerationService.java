@@ -53,7 +53,8 @@ public class CurriculumGenerationService {
                     "El arbol curricular temporal no es valido.");
         }
 
-        List<String> arbolErrors = CurriculumGenerationSchema.validate(request.arbol());
+        List<String> arbolErrors =
+                CurriculumGenerationSchema.validateTree(request.arbol());
         if (!arbolErrors.isEmpty()) {
             throw new InvalidCurriculumTreeException(
                     "El arbol curricular temporal no cumple el contrato.",
@@ -178,14 +179,14 @@ public class CurriculumGenerationService {
                 user,
                 CurriculumGenerationSchema.schema());
 
-        JsonNode generatedTree;
+        JsonNode operations;
         try {
             progress.accept("Validando la respuesta del modelo");
             String normalizedRaw = normalizeModelCharacters(raw);
-            generatedTree = objectMapper.reader()
+            operations = objectMapper.reader()
                     .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
                     .readTree(normalizedRaw);
-            normalizeNodeKeys(generatedTree);
+            normalizeNodeKeys(operations);
         } catch (JacksonException exception) {
             LOGGER.log(Level.WARNING,
                     "RESPUESTA_MODELO: jsonInvalido, respuestaChars={0}, tipoError={1}",
@@ -196,34 +197,23 @@ public class CurriculumGenerationService {
         }
 
         List<String> generatedErrors =
-                CurriculumGenerationSchema.validate(generatedTree);
+                CurriculumGenerationSchema.validate(operations);
         if (!generatedErrors.isEmpty()) {
             LOGGER.log(Level.WARNING,
                     "RESPUESTA_MODELO: contratoInvalido, errores={0}",
                     generatedErrors.size());
             throw new InvalidCurriculumOutputException(
-                    "El modelo devolvio un arbol curricular invalido.",
+                    "El modelo devolvio operaciones curriculares invalidas.",
                     generatedErrors);
-        }
-        List<String> preservationErrors =
-                validatePreservedTree(request.arbol(), generatedTree);
-        if (!preservationErrors.isEmpty()) {
-            LOGGER.log(Level.WARNING,
-                    "RESPUESTA_MODELO: arbolBaseNoConservado, errores={0}",
-                    preservationErrors.size());
-            throw new InvalidCurriculumOutputException(
-                    "El modelo no devolvio el arbol curricular recibido completo.",
-                    preservationErrors);
         }
 
         progress.accept("Fusionando cambios conservadores con el arbol actual");
-        MergeResult mergeResult = mergeTemporary(request.arbol(), generatedTree);
+        MergeResult mergeResult = mergeOperations(request.arbol(), operations);
         LOGGER.log(Level.INFO,
-                "MERGE_CURRICULO: nodosGenerados={0}, nodosAgregados={1}, contenidosAgregados={2}, nombresGenerados={3}",
-                new Object[]{countNodes(generatedTree),
+                "MERGE_CURRICULO: nodosAgregados={0}, contenidosAgregados={1}",
+                new Object[]{
                         mergeResult.nodosAgregados(),
-                        mergeResult.contenidosAgregados(),
-                        collectNodeNames(generatedTree)});
+                        mergeResult.contenidosAgregados()});
         if (mergeResult.nodosAgregados() == 0
                 && mergeResult.contenidosAgregados() == 0) {
             throw new NoRelevantCurriculumException(
@@ -237,8 +227,8 @@ public class CurriculumGenerationService {
                         result.documentoId(),
                         result.checksumSha256(),
                         "procesada",
-                        0,
-                        0,
+                        mergeResult.nodosAgregados(),
+                        mergeResult.contenidosAgregados(),
                         null));
             }
         }
@@ -307,41 +297,61 @@ public class CurriculumGenerationService {
         return """
                 ## Rol:
                 Eres un asistente de construccion curricular.
-                Recibiras un arbol JSON existente y fuentes nuevas.
-                Alimenta el arbol sin destruirlo.
+                Recibiras un indice compacto de nodos existentes y fuentes nuevas.
+                Devuelve solo operaciones nuevas. No devuelvas el arbol completo.
 
                ## Reglas obligatorias:
-                - Conserva todos los nodos persistidos.
-                - Conserva nombres manuales.
-                - En la raiz, "hijos" debe contener las unidades existentes o nuevas.
-                - No elimines unidades, temas ni conceptos.
-                - No crees ni dupliques la materia raiz.
-                - No conviertas el nombre de la materia en una unidad, tema o concepto.
-                - Materia solo puede aparecer una vez como raiz y debe conservar el nombre recibido.
-                - No infieras una unidad, tema o concepto nuevo solo porque repita el nombre de la materia.
-                - Obligatoriedad estricta de claves: usa exclusivamente comillas dobles ASCII
-                  para delimitar todas las claves y todos los valores de texto.
-                - Nunca uses comillas simples, claves con ? al final, claves con espacios,
-                  ni nombres de campo terminados con apostrofes.
-                - Cada nodo debe contener "tipo", "nombre", "contenido" y "hijos".
-                - "contenido" debe ser siempre una lista de objetos.
-                - "hijos" debe ser siempre una lista de objetos.
-                - Los nodos existentes deben conservar exactamente su "id", "tipo" y "nombre".
-                - No inventes un "id" para nodos existentes.
+                - Devuelve una sola lista "contenidos" para textos asociados a conceptos existentes.
+                - Devuelve una sola lista "nodos" para unidades, temas o conceptos nuevos.
+                - Cada contenido debe usar "conceptoId" y "descripcion".
+                - Cada nodo nuevo debe usar "tipo", "nombre", "parentId" y opcionalmente "contenido".
+                - "parentId" debe referirse exactamente a un id existente del indice.
+                - unidad se agrega bajo la materia; tema bajo una unidad; concepto bajo un tema.
+                - No uses "id" nuevo para relacionar nodos.
+                - No agregues conceptos bajo otros conceptos.
+                - No repitas conceptos, temas o unidades existentes por nombre.
+                - Usa comillas dobles ASCII.
+                - No devuelvas claves alternativas ni texto fuera del JSON.
                 - No devuelvas texto antes o despues del objeto JSON.
                 - No inventes informacion no presente en las fuentes.
                 - Agrega solo informacion curricular relevante.
-                - Para conceptos existentes que tengan informacion verificable en las fuentes,
-                  agrega entre 2 y 5 descripciones breves a su campo "contenido".
-                - Cada elemento de "contenido" debe ser un objeto con
-                  "descripcion" como texto, no una cadena directa.
-                - Si una fuente trata conceptos presentes en el arbol, relaciona la
-                  informacion especifica con esos conceptos por nombre y jerarquia.
-                - No fusiones nodos por nombre a menos que tengan el mismo significado evidente.
-                - Marca cada nodo agregado con origen "ia".
-                - Marca cada nodo agregado con revisionEstado "pendiente_revision".
+                - Para cada concepto existente, agrega como maximo 3 descripciones.
+                - Limita la respuesta a cambios verificables presentes en la fuente.
                 - Devuelve exclusivamente JSON valido conforme al contrato.
                 """;
+    }
+
+    private String buildNodeIndex(JsonNode root) {
+        StringBuilder index = new StringBuilder();
+        appendNodeIndex(root, null, index);
+        return index.toString();
+    }
+
+    private void appendNodeIndex(
+            JsonNode node,
+            String parentId,
+            StringBuilder index) {
+        if (node == null || !node.isObject()) {
+            return;
+        }
+        String id = text(node, "id");
+        String type = text(node, "tipo");
+        String name = text(node, "nombre");
+        if (!id.isBlank() && !type.isBlank() && !name.isBlank()) {
+            index.append("- id=").append(id)
+                    .append(", tipo=").append(type)
+                    .append(", nombre=").append(name);
+            if (parentId != null) {
+                index.append(", parentId=").append(parentId);
+            }
+            index.append('\n');
+        }
+        JsonNode children = node.get("hijos");
+        if (children != null && children.isArray()) {
+            for (JsonNode child : children) {
+                appendNodeIndex(child, id, index);
+            }
+        }
     }
 
     private String threeLayerContextPrompt(
@@ -353,28 +363,17 @@ public class CurriculumGenerationService {
                 - materiaNombre: """ + request.materiaNombre() + """
                 - modoFusion: conservadora
 
-                Arbol actual:
-                """ + request.arbol().toString() + """
+                Indice de nodos existentes:
+                """ + buildNodeIndex(request.arbol()) + """
 
                 Fuentes nuevas:
                 """ + String.join("\n\n", sourceTexts) + """
 
                 Tarea:
                 Analiza solo las fuentes nuevas.
-                Detecta unidades, temas y conceptos relevantes y agrega las que no se encuentren al arbol.
-                Relaciona primero los nombres del arbol con las secciones de las fuentes.
-                Agrega contenido breve y verificable a los conceptos coincidentes.
-                Agrega unidades, temas o conceptos nuevos solo cuando la fuente los
-                identifique claramente y no exista una coincidencia equivalente.
-                Devuelve el arbol completo actualizado.
-                Usa exactamente las claves "tipo", "nombre", "contenido" y "hijos".
-                No agregues espacios al final de los nombres de claves.
-                No persistiras cambios.
-                No debes devolver explicaciones fuera del JSON.
-                Limita la respuesta a cambios verificables presentes en la fuente.
-                Para evitar truncamientos, devuelve como maximo 2 temas y 10 conceptos nuevos por fuente
-                Los temas tienen que secciones que tengan conceptos por debajo para justificar su creacion
-                y agrega como maximo 3 descripciones por concepto.
+                Lista solo contenido nuevo para conceptos existentes usando conceptoId.
+                Lista solo unidades, temas o conceptos nuevos usando tipo, nombre y parentId.
+                Si no hay cambios, devuelve {"contenidos":[],"nodos":[]}.
                 """;
     }
 
@@ -504,6 +503,146 @@ public class CurriculumGenerationService {
                     generatedChild,
                     path + ".hijos",
                     errors);
+        }
+    }
+
+    private MergeResult mergeOperations(JsonNode original, JsonNode operations) {
+        ObjectNode merged = (ObjectNode) objectMapper.valueToTree(original);
+        MergeCounter counter = new MergeCounter();
+        List<String> errors = new ArrayList<>();
+
+        JsonNode contenidos = operations.get("contenidos");
+        if (contenidos != null && contenidos.isArray()) {
+            for (JsonNode item : contenidos) {
+                String conceptoId = text(item, "conceptoId");
+                String descripcion = text(item, "descripcion");
+                JsonNode concepto = findNodeById(merged, conceptoId);
+                if (concepto == null
+                        || !"concepto".equalsIgnoreCase(text(concepto, "tipo"))) {
+                    errors.add("conceptoId inexistente: " + conceptoId);
+                    continue;
+                }
+                if (descripcion.isBlank()) {
+                    continue;
+                }
+                addGeneratedContent((ObjectNode) concepto, descripcion, counter);
+            }
+        }
+
+        JsonNode nodos = operations.get("nodos");
+        if (nodos != null && nodos.isArray()) {
+            for (JsonNode item : nodos) {
+                String parentId = text(item, "parentId");
+                String type = text(item, "tipo");
+                String name = text(item, "nombre");
+                JsonNode parent = findNodeById(merged, parentId);
+                if (parent == null || !isValidParentType(parent, type)) {
+                    errors.add("parentId invalido para " + type + ": " + parentId);
+                    continue;
+                }
+                if (hasChildWithName(parent, type, name)) {
+                    continue;
+                }
+
+                ObjectNode newNode = objectMapper.createObjectNode();
+                newNode.put("id", "TEMP-" + UUID.randomUUID());
+                newNode.put("tipo", type);
+                newNode.put("nombre", name);
+                newNode.put("origen", "ia");
+                newNode.put("revisionEstado", "pendiente_revision");
+                newNode.put("dirty", true);
+                newNode.putArray("contenido");
+                newNode.putArray("hijos");
+
+                JsonNode contenido = item.get("contenido");
+                if (contenido != null && contenido.isArray()) {
+                    for (JsonNode content : contenido) {
+                        String descripcion = text(content, "descripcion");
+                        if (!descripcion.isBlank()) {
+                            addGeneratedContent(newNode, descripcion, counter);
+                        }
+                    }
+                }
+
+                ensureChildren((ObjectNode) parent).add(newNode);
+                counter.nodosAgregados++;
+            }
+        }
+
+        if (!errors.isEmpty()) {
+            throw new InvalidCurriculumOutputException(
+                    "El modelo devolvio operaciones con referencias invalidas.",
+                    errors);
+        }
+        return new MergeResult(merged,
+                counter.nodosAgregados,
+                counter.contenidosAgregados);
+    }
+
+    private JsonNode findNodeById(JsonNode node, String id) {
+        if (node == null || id.isBlank()) {
+            return null;
+        }
+        if (id.equals(text(node, "id"))) {
+            return node;
+        }
+        JsonNode children = node.get("hijos");
+        if (children != null && children.isArray()) {
+            for (JsonNode child : children) {
+                JsonNode found = findNodeById(child, id);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean isValidParentType(JsonNode parent, String childType) {
+        String parentType = text(parent, "tipo");
+        return ("unidad".equals(childType) && "materia".equals(parentType))
+                || ("tema".equals(childType) && "unidad".equals(parentType))
+                || ("concepto".equals(childType) && "tema".equals(parentType));
+    }
+
+    private boolean hasChildWithName(JsonNode parent, String type, String name) {
+        JsonNode children = parent.get("hijos");
+        if (children == null || !children.isArray()) {
+            return false;
+        }
+        for (JsonNode child : children) {
+            if (normalizeName(type).equals(normalizeName(text(child, "tipo")))
+                    && normalizeName(name).equals(normalizeName(text(child, "nombre")))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void addGeneratedContent(
+            ObjectNode node,
+            String descripcion,
+            MergeCounter counter) {
+        ArrayNode contenido = node.get("contenido") instanceof ArrayNode array
+                ? array
+                : node.putArray("contenido");
+        if (containsDescription(contenido, descripcion)) {
+            return;
+        }
+        ObjectNode item = objectMapper.createObjectNode();
+        item.put("id", "TEMP-" + UUID.randomUUID());
+        item.put("descripcion", descripcion);
+        item.put("origen", "ia");
+        item.put("revisionEstado", "pendiente_revision");
+        contenido.add(item);
+        counter.contenidosAgregados++;
+        if ("original".equalsIgnoreCase(text(node, "revisionEstado"))
+                || text(node, "revisionEstado").isBlank()) {
+            node.put("revisionEstado", "modificado");
+        }
+        node.put("dirty", true);
+        if ("concepto".equalsIgnoreCase(text(node, "tipo"))) {
+            node.put("estadoConcepto", "con_contenido");
         }
     }
 

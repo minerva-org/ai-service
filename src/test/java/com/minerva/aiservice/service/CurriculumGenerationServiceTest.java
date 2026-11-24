@@ -92,49 +92,20 @@ class CurriculumGenerationServiceTest {
 
         String generated = """
                 {
-                  "id": "MAT-1",
-                  "tipo": "materia",
-                  "nombre": "Ingenieria de Software",
-                  "origen": "materia",
-                  "revisionEstado": "original",
-                  "hijos": [
+                  "contenidos": [
                     {
-                      "id": "UG-1",
-                      "tipo": "unidad",
-                      "nombre": "Proceso de software",
-                      "origen": "materia",
-                      "revisionEstado": "original",
-                      "hijos": [
+                      "conceptoId": "CG-1",
+                      "descripcion": "Incluye Sprint Backlog."
+                    }
+                  ],
+                  "nodos": [
+                    {
+                      "tipo": "concepto",
+                      "nombre": "Sprint Review",
+                      "parentId": "TG-1",
+                      "contenido": [
                         {
-                          "id": "TG-1",
-                          "tipo": "tema",
-                          "nombre": "Metodologias",
-                          "origen": "materia",
-                          "revisionEstado": "original",
-                          "hijos": [
-                            {
-                              "id": "CG-1",
-                              "tipo": "concepto",
-                              "nombre": "Scrum",
-                              "origen": "materia",
-                              "revisionEstado": "original",
-                              "estadoConcepto": "con_contenido",
-                              "contenido": [
-                                {
-                                  "descripcion": "Incluye Sprint Backlog."
-                                }
-                              ]
-                            },
-                            {
-                              "tipo": "concepto",
-                              "nombre": "Sprint Review",
-                              "contenido": [
-                                {
-                                  "descripcion": "Inspecciona el Incremento."
-                                }
-                              ]
-                            }
-                          ]
+                          "descripcion": "Inspecciona el Incremento."
                         }
                       ]
                     }
@@ -195,6 +166,7 @@ class CurriculumGenerationServiceTest {
                           "nombre": "Recursividad",
                           "hijos": [
                             {
+                              "id": "FACTORIAL-1",
                               "tipo": "concepto",
                               "nombre": "Factorial",
                               "estadoConcepto": "sin_contenido",
@@ -210,32 +182,13 @@ class CurriculumGenerationServiceTest {
 
         String generated = """
                 {
-                  "tipo": "materia",
-                  "nombre": "Matemáticas",
-                  "hijos": [
+                  "contenidos": [
                     {
-                      "tipo": "unidad",
-                      "nombre": "Estructuras",
-                      "hijos": [
-                        {
-                          "tipo": "tema",
-                          "nombre": "Recursividad",
-                          "hijos": [
-                            {
-                              "tipo": "concepto",
-                              "nombre": "Factorial",
-                              "estadoConcepto": "sin_contenido",
-                              "contenido": [
-                                {
-                                  "descripcion": "El factorial de cero es uno."
-                                }
-                              ]
-                            }
-                          ]
-                        }
-                      ]
+                      "conceptoId": "FACTORIAL-1",
+                      "descripcion": "El factorial de cero es uno."
                     }
-                  ]
+                  ],
+                  "nodos": []
                 }
                 """;
 
@@ -336,9 +289,8 @@ class CurriculumGenerationServiceTest {
                 """);
         String generated = """
                 {
-                  "tipo": "materia",
-                  "nombre": "Materia",
-                  "hijos": []
+                  "contenidos": [],
+                  "nodos": []
                 }
                 """;
 
