@@ -44,7 +44,7 @@ class QuizGenerationServiceTest {
                 .thenReturn(response);
 
         assertThrows(
-                OllamaClient.InvalidModelResponseException.class,
+                AiModelClient.InvalidModelResponseException.class,
                 () -> service.generate(request));
     }
 }

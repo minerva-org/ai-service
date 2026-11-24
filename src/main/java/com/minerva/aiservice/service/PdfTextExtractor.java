@@ -31,7 +31,33 @@ public class PdfTextExtractor {
     private final AiServiceProperties properties;
 
     public String extract(MultipartFile file) {
-        if (file.isEmpty()) {
+        return extract(readPdfUpload(file));
+    }
+
+    public byte[] validateAndRead(MultipartFile file, int maxPages) {
+        if (maxPages <= 0) {
+            throw new IllegalArgumentException("maxPages must be positive.");
+        }
+        byte[] content = readPdfUpload(file);
+        if (!hasPdfSignature(content)) {
+            throw new InvalidPdfException("File content is not a PDF.");
+        }
+        try (PDDocument document = Loader.loadPDF(content)) {
+            if (document.isEncrypted()) {
+                throw new InvalidPdfException("Encrypted PDFs are not supported.");
+            }
+            if (document.getNumberOfPages() > maxPages) {
+                throw new PdfPageLimitException(
+                        "PDF exceeds the maximum page count for native model input.");
+            }
+            return content;
+        } catch (IOException exception) {
+            throw new InvalidPdfException("PDF could not be parsed.", exception);
+        }
+    }
+
+    private byte[] readPdfUpload(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Select a PDF file.");
         }
         if (file.getSize() > properties.limits().maxPdfBytes()) {
@@ -42,7 +68,7 @@ public class PdfTextExtractor {
             throw new ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Only PDF files are accepted.");
         }
         try {
-            return extract(file.getBytes());
+            return file.getBytes();
         } catch (IOException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Could not read uploaded PDF.", exception);
         }
@@ -101,6 +127,12 @@ public class PdfTextExtractor {
 
     public static class PdfTextTooLargeException extends RuntimeException {
         public PdfTextTooLargeException(String message) {
+            super(message);
+        }
+    }
+
+    public static class PdfPageLimitException extends RuntimeException {
+        public PdfPageLimitException(String message) {
             super(message);
         }
     }

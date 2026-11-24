@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -24,7 +25,8 @@ import tools.jackson.databind.ObjectMapper;
 
 class DocumentExtractionServiceTest {
 
-    private final PdfTextExtractor extractor = mock(PdfTextExtractor.class);
+    private final DocumentTextExtractor extractor = mock(DocumentTextExtractor.class);
+    private final PdfTextExtractor pdfExtractor = mock(PdfTextExtractor.class);
     private final OllamaClient ollama = mock(OllamaClient.class);
     private final ObjectMapper mapper = new ObjectMapper();
     private DocumentExtractionService service;
@@ -38,6 +40,7 @@ class DocumentExtractionServiceTest {
     void setUp() {
         service = new DocumentExtractionService(
                 extractor,
+                pdfExtractor,
                 ollama,
                 Validation.buildDefaultValidatorFactory().getValidator(),
                 mapper);
@@ -63,6 +66,52 @@ class DocumentExtractionServiceTest {
                 contains("unidad"),
                 contains("Unidad Algebra"),
                 eq(DocumentExtractionSchema.schema()));
+    }
+
+    @Test
+    void preservesEveryUnitTopicAndConceptInTheGeneratedTree() {
+        when(ollama.generateStructured(anyString(), anyString(), anyMap())).thenReturn("""
+                {"units":[
+                  {"name":"Unidad 1","topics":[
+                    {"name":"Tema 1","concepts":[{"name":"Concepto 1"},{"name":"Concepto 2"}]},
+                    {"name":"Tema 2","concepts":[{"name":"Concepto 3"}]}
+                  ]},
+                  {"name":"Unidad 2","topics":[
+                    {"name":"Tema 3","concepts":[{"name":"Concepto 4"}]}
+                  ]}
+                ]}
+                """);
+
+        DocumentExtractionResponse result = service.extract(file);
+
+        assertEquals(2, result.units().size());
+        assertEquals(2, result.units().get(0).topics().size());
+        assertEquals(2, result.units().get(0).topics().get(0).concepts().size());
+        assertEquals("Concepto 4",
+                result.units().get(1).topics().get(0).concepts().get(0).name());
+        verify(ollama).generateStructured(anyString(), anyString(), anyMap());
+    }
+
+    @Test
+    void givesClaudeTheOriginalPdfInsteadOfOnlyExtractedText() {
+        byte[] pdf = new byte[]{1, 2, 3};
+        when(ollama.supportsNativePdfInput()).thenReturn(true);
+        when(pdfExtractor.validateAndRead(file, 100)).thenReturn(pdf);
+        when(ollama.generateStructuredWithPdf(anyString(), anyString(), eq(pdf), anyMap()))
+                .thenReturn("""
+                        {"units":[{"name":"Algebra","topics":[{"name":"Ecuaciones","concepts":[{"name":"Igualdad"}]}]}]}
+                        """);
+
+        DocumentExtractionResponse result = service.extract(file);
+
+        assertEquals(1, result.units().size());
+        verify(ollama).generateStructuredWithPdf(
+                contains("Actúa como docente"),
+                contains("PDF adjunto completo"),
+                eq(pdf),
+                eq(DocumentExtractionSchema.schema()));
+        verify(ollama, never()).generateStructured(anyString(), anyString(), anyMap());
+        verify(extractor, never()).extract(file);
     }
 
     // Input: PDF que el modelo representa con units vacío.

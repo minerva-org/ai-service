@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import com.minerva.aiservice.config.AiServiceProperties;
 
@@ -18,7 +19,8 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 @Service
-public class OllamaClient {
+@ConditionalOnProperty(name = "ai.provider", havingValue = "ollama", matchIfMissing = true)
+public class OllamaClient implements AiModelClient {
 
     private static final Logger LOGGER =
             Logger.getLogger(OllamaClient.class.getName());
@@ -50,6 +52,17 @@ public class OllamaClient {
                 .build();
     }
 
+    @Override
+    public String provider() {
+        return "ollama";
+    }
+
+    @Override
+    public String model() {
+        return properties.ollama().model();
+    }
+
+    @Override
     public boolean isConfiguredModelAvailable() {
         try {
             OllamaTagsResponse response = restClient.get()
@@ -67,6 +80,7 @@ public class OllamaClient {
         }
     }
 
+    @Override
     public <T> T generateJson(String systemPrompt, String userPrompt, Class<T> responseType) {
         String content = generateContent(systemPrompt, userPrompt, "json");
         try {
@@ -76,6 +90,7 @@ public class OllamaClient {
         }
     }
 
+    @Override
     public String generateStructured(String systemPrompt, String userPrompt, Map<String, Object> schema) {
         return generateContent(systemPrompt, userPrompt, schema);
     }
@@ -192,19 +207,19 @@ public class OllamaClient {
     private record OllamaMessage(String role, String content) {
     }
 
-    public static class OllamaUnavailableException extends RuntimeException {
+    public static class OllamaUnavailableException extends AiModelClient.ProviderUnavailableException {
         public OllamaUnavailableException(Throwable cause) {
-            super("Ollama is unavailable.", cause);
+            super("Ollama no está disponible.", cause);
         }
     }
 
-    public static class OllamaTimeoutException extends RuntimeException {
+    public static class OllamaTimeoutException extends AiModelClient.ProviderTimeoutException {
         public OllamaTimeoutException(Throwable cause) {
-            super("Ollama request timed out.", cause);
+            super("La solicitud a Ollama excedió el tiempo de espera.", cause);
         }
     }
 
-    public static class InvalidModelResponseException extends RuntimeException {
+    public static class InvalidModelResponseException extends AiModelClient.InvalidModelResponseException {
         public InvalidModelResponseException(String message) {
             super(message);
         }
@@ -219,16 +234,9 @@ public class OllamaClient {
      * Semantica distinta de InvalidModelResponseException (no es JSON malformado,
      * es salida incompleta). Los llamadores pueden reintentar con menos operaciones.
      */
-    public static class ModelOutputTruncatedException extends RuntimeException {
-        private final String partialContent;
-
+    public static class ModelOutputTruncatedException extends AiModelClient.ModelOutputTruncatedException {
         public ModelOutputTruncatedException(String message, String partialContent) {
-            super(message);
-            this.partialContent = partialContent == null ? "" : partialContent;
-        }
-
-        public String getPartialContent() {
-            return partialContent;
+            super(message, partialContent);
         }
     }
 }

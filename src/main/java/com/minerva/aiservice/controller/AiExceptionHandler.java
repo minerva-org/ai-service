@@ -13,8 +13,10 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import com.minerva.aiservice.service.AiModelClient;
 import com.minerva.aiservice.service.OllamaClient;
 import com.minerva.aiservice.service.PdfTextExtractor;
+import com.minerva.aiservice.service.DocumentTextExtractor;
 import com.minerva.aiservice.service.DocumentExtractionService;
 import com.minerva.aiservice.service.CurriculumGenerationService;
 
@@ -31,6 +33,24 @@ public class AiExceptionHandler {
                 "El servicio de inteligencia artificial no esta disponible.");
     }
 
+    @ExceptionHandler(AiModelClient.ProviderUnavailableException.class)
+    public ResponseEntity<Map<String, Object>> handleProviderUnavailable(
+            AiModelClient.ProviderUnavailableException exception) {
+        LOGGER.log(Level.WARNING, "AI_SERVICE_PROVIDER_UNAVAILABLE", exception);
+        return error(HttpStatus.SERVICE_UNAVAILABLE,
+                "AI_PROVIDER_UNAVAILABLE",
+                "El servicio de inteligencia artificial no esta disponible.");
+    }
+
+    @ExceptionHandler(AiModelClient.ProviderRequestException.class)
+    public ResponseEntity<Map<String, Object>> handleProviderRequestRejected(
+            AiModelClient.ProviderRequestException exception) {
+        LOGGER.log(Level.WARNING, "AI_SERVICE_PROVIDER_REQUEST_REJECTED", exception);
+        return error(HttpStatus.BAD_GATEWAY,
+                "AI_PROVIDER_REQUEST_REJECTED",
+                "El proveedor de inteligencia artificial rechazó la solicitud.");
+    }
+
     @ExceptionHandler(OllamaClient.OllamaTimeoutException.class)
     public ResponseEntity<Map<String, Object>> handleOllamaTimeout(
             OllamaClient.OllamaTimeoutException exception) {
@@ -40,9 +60,27 @@ public class AiExceptionHandler {
                 "La generacion excedio el tiempo de espera.");
     }
 
-    @ExceptionHandler(OllamaClient.InvalidModelResponseException.class)
+    @ExceptionHandler(AiModelClient.ProviderTimeoutException.class)
+    public ResponseEntity<Map<String, Object>> handleProviderTimeout(
+            AiModelClient.ProviderTimeoutException exception) {
+        LOGGER.log(Level.WARNING, "AI_SERVICE_PROVIDER_TIMEOUT", exception);
+        return error(HttpStatus.GATEWAY_TIMEOUT,
+                "AI_PROVIDER_TIMEOUT",
+                "La generacion excedio el tiempo de espera.");
+    }
+
+    @ExceptionHandler(AiModelClient.ModelOutputTruncatedException.class)
+    public ResponseEntity<Map<String, Object>> handleTruncatedModelOutput(
+            AiModelClient.ModelOutputTruncatedException exception) {
+        LOGGER.log(Level.WARNING, "AI_SERVICE_MODEL_OUTPUT_TRUNCATED", exception);
+        return error(HttpStatus.BAD_GATEWAY,
+                "MODEL_OUTPUT_TRUNCATED",
+                "La respuesta del modelo quedó incompleta; no se generó un resultado parcial.");
+    }
+
+    @ExceptionHandler(AiModelClient.InvalidModelResponseException.class)
     public ResponseEntity<Map<String, Object>> handleInvalidModelResponse(
-            OllamaClient.InvalidModelResponseException exception) {
+            AiModelClient.InvalidModelResponseException exception) {
         LOGGER.log(Level.WARNING, "AI_SERVICE_INVALID_MODEL_OUTPUT: " + exception.getMessage(), exception);
         return error(HttpStatus.BAD_GATEWAY,
                 "INVALID_MODEL_OUTPUT",
@@ -76,6 +114,42 @@ public class AiExceptionHandler {
             PdfTextExtractor.PdfTextTooLargeException exception) {
         LOGGER.log(Level.INFO, "AI_SERVICE_EXTRACTED_TEXT_TOO_LARGE");
         return error(HttpStatusCode.valueOf(413), "EXTRACTED_TEXT_TOO_LARGE", exception.getMessage());
+    }
+
+    @ExceptionHandler(PdfTextExtractor.PdfPageLimitException.class)
+    public ResponseEntity<Map<String, Object>> handlePdfPageLimit(
+            PdfTextExtractor.PdfPageLimitException exception) {
+        LOGGER.log(Level.INFO, "AI_SERVICE_PDF_PAGE_LIMIT");
+        return error(HttpStatusCode.valueOf(413),
+                "PDF_PAGE_LIMIT_EXCEEDED",
+                exception.getMessage());
+    }
+
+    @ExceptionHandler(DocumentTextExtractor.InvalidDocumentException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidDocument(
+            DocumentTextExtractor.InvalidDocumentException exception) {
+        LOGGER.log(Level.INFO, "AI_SERVICE_DOCUMENT_INVALID", exception);
+        return error(HttpStatus.UNPROCESSABLE_CONTENT,
+                "DOCUMENT_INVALID",
+                exception.getMessage());
+    }
+
+    @ExceptionHandler(DocumentTextExtractor.NoExtractableTextException.class)
+    public ResponseEntity<Map<String, Object>> handleNoDocumentText(
+            DocumentTextExtractor.NoExtractableTextException exception) {
+        LOGGER.log(Level.INFO, "AI_SERVICE_NO_EXTRACTABLE_DOCUMENT_TEXT");
+        return error(HttpStatus.UNPROCESSABLE_CONTENT,
+                "NO_EXTRACTABLE_TEXT",
+                exception.getMessage());
+    }
+
+    @ExceptionHandler(DocumentTextExtractor.DocumentTextTooLargeException.class)
+    public ResponseEntity<Map<String, Object>> handleDocumentTextTooLarge(
+            DocumentTextExtractor.DocumentTextTooLargeException exception) {
+        LOGGER.log(Level.INFO, "AI_SERVICE_DOCUMENT_TEXT_TOO_LARGE");
+        return error(HttpStatusCode.valueOf(413),
+                "EXTRACTED_TEXT_TOO_LARGE",
+                exception.getMessage());
     }
 
     @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class})

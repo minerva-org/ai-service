@@ -40,6 +40,7 @@ class DocumentLaboratoryServiceTest {
     @BeforeEach
     void setUp() {
         service = new DocumentLaboratoryService(extractor, ollama, mapper, properties);
+        when(ollama.model()).thenReturn("qwen3:8b");
         when(extractor.extract(file)).thenReturn("Unidad Algebra. Tema Ecuaciones.");
     }
 

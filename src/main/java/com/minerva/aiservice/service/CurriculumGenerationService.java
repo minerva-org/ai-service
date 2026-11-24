@@ -43,7 +43,7 @@ public class CurriculumGenerationService {
     private static final int MIN_SOURCE_BUDGET_CHARS = 3_000;
 
     private final PdfTextExtractor pdfTextExtractor;
-    private final OllamaClient ollamaClient;
+    private final AiModelClient aiModelClient;
     private final ObjectMapper objectMapper;
 
     public CurriculumGenerationResponse generate(
@@ -189,11 +189,11 @@ public class CurriculumGenerationService {
         // vez con menos fuentes para que el modelo tenga presupuesto suficiente.
         String raw;
         try {
-            raw = ollamaClient.generateStructured(
+            raw = aiModelClient.generateStructured(
                     system,
                     user,
                     CurriculumGenerationSchema.schema());
-        } catch (OllamaClient.ModelOutputTruncatedException truncated) {
+        } catch (AiModelClient.ModelOutputTruncatedException truncated) {
             LOGGER.log(Level.WARNING,
                     "REINTENTO_TRUNCAMIENTO: respuestaParcialChars={0}, fuentes={1}",
                     new Object[]{truncated.getPartialContent().length(),
@@ -203,7 +203,7 @@ public class CurriculumGenerationService {
                     : sourceTexts;
             String reducedUser = threeLayerContextPrompt(request, reduced);
             progress.accept("Reintentando con menos fuentes por limite del modelo");
-            raw = ollamaClient.generateStructured(
+            raw = aiModelClient.generateStructured(
                     system,
                     reducedUser,
                     CurriculumGenerationSchema.schema());
@@ -222,8 +222,8 @@ public class CurriculumGenerationService {
                     "RESPUESTA_MODELO: jsonInvalido, respuestaChars={0}, tipoError={1}",
                     new Object[]{raw == null ? 0 : raw.length(),
                             exception.getClass().getSimpleName()});
-            throw new OllamaClient.InvalidModelResponseException(
-                    "Ollama returned invalid JSON.", exception);
+            throw new AiModelClient.InvalidModelResponseException(
+                    "El proveedor devolvió JSON inválido.", exception);
         }
 
         List<String> generatedErrors =

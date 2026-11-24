@@ -7,9 +7,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.minerva.aiservice.config.AiServiceProperties;
 import com.minerva.aiservice.dto.HealthResponse;
-import com.minerva.aiservice.service.OllamaClient;
+import com.minerva.aiservice.service.AiModelClient;
 
 import lombok.RequiredArgsConstructor;
 
@@ -17,41 +16,40 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class HealthController {
 
-    private final OllamaClient ollamaClient;
-    private final AiServiceProperties properties;
+    private final AiModelClient aiModelClient;
 
     @GetMapping("/health")
     public ResponseEntity<HealthResponse> health() {
         try {
-            if (ollamaClient.isConfiguredModelAvailable()) {
-                return ResponseEntity.ok(new HealthResponse("UP", properties.ollama().model()));
+            if (aiModelClient.isConfiguredModelAvailable()) {
+                return ResponseEntity.ok(new HealthResponse("UP", aiModelClient.model()));
             }
-        } catch (OllamaClient.OllamaUnavailableException exception) {
+        } catch (AiModelClient.ProviderException exception) {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                    .body(new HealthResponse("DOWN", properties.ollama().model()));
+                    .body(new HealthResponse("DOWN", aiModelClient.model()));
         }
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                .body(new HealthResponse("DOWN", properties.ollama().model()));
+                .body(new HealthResponse("DOWN", aiModelClient.model()));
     }
 
     @GetMapping("/v1/salud")
     public ResponseEntity<Map<String, Object>> healthV1() {
         try {
-            if (ollamaClient.isConfiguredModelAvailable()) {
+            if (aiModelClient.isConfiguredModelAvailable()) {
                 return ResponseEntity.ok(Map.of(
-                        "motor", "ollama",
+                        "motor", aiModelClient.provider(),
                         "ok", true,
-                        "modelo", properties.ollama().model()));
+                        "modelo", aiModelClient.model()));
             }
-        } catch (OllamaClient.OllamaUnavailableException ignored) {
+        } catch (AiModelClient.ProviderException ignored) {
             return ResponseEntity.ok(Map.of(
-                    "motor", "ollama",
+                    "motor", aiModelClient.provider(),
                     "ok", false,
-                    "modelo", properties.ollama().model()));
+                    "modelo", aiModelClient.model()));
         }
         return ResponseEntity.ok(Map.of(
-                "motor", "ollama",
+                "motor", aiModelClient.provider(),
                 "ok", false,
-                "modelo", properties.ollama().model()));
+                "modelo", aiModelClient.model()));
     }
 }

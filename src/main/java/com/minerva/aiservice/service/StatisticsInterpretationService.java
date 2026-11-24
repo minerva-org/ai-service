@@ -15,7 +15,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class StatisticsInterpretationService {
 
-    private final OllamaClient ollamaClient;
+    private final AiModelClient aiModelClient;
     private final ObjectMapper objectMapper;
     private final Validator validator;
 
@@ -27,12 +27,12 @@ public class StatisticsInterpretationService {
                 indícalo en answer y establece insufficientData en true. Devuelve únicamente JSON válido.
                 """;
 
-        StatisticsInterpretationResponse result = ollamaClient.generateJson(
+        StatisticsInterpretationResponse result = aiModelClient.generateJson(
                 systemPrompt,
                 toJson(request),
                 StatisticsInterpretationResponse.class);
         if (!validator.validate(result).isEmpty()) {
-            throw new OllamaClient.InvalidModelResponseException(
+            throw new AiModelClient.InvalidModelResponseException(
                     "Model output did not match the statistics response schema.");
         }
         return result;

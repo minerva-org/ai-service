@@ -21,7 +21,7 @@ import tools.jackson.databind.ObjectMapper;
 public class DocumentLaboratoryService {
 
     private final PdfTextExtractor pdfTextExtractor;
-    private final OllamaClient ollamaClient;
+    private final AiModelClient aiModelClient;
     private final ObjectMapper objectMapper;
     private final AiServiceProperties properties;
 
@@ -44,7 +44,7 @@ public class DocumentLaboratoryService {
                 Cada unidad debe tener temas y cada tema conceptos.
                 Ejemplo: {"units":[{"name":"Unidad 1","topics":[{"name":"Tema 1","concepts":[{"name":"Concepto 1"}]}]}]}
                 No agregues propiedades fuera del esquema.
-                """.strip()), properties.ollama().model(), properties.limits().maxPdfBytes());
+                """.strip()), aiModelClient.model(), properties.limits().maxPdfBytes());
     }
 
     public DocumentLabResponse extract(MultipartFile file, DocumentLabRequest request) {
@@ -57,7 +57,7 @@ public class DocumentLaboratoryService {
         ExtractionPrompts prompts = request.prompts();
         String system = String.join("\n\n", prompts.role(), prompts.instructions(),
                 sourceInstructions, prompts.outputContract());
-        String raw = ollamaClient.generateStructured(system,
+        String raw = aiModelClient.generateStructured(system,
                 "Documento fuente:\n<document>\n" + text + "\n</document>",
                 DocumentExtractionSchema.schema());
 
@@ -70,7 +70,7 @@ public class DocumentLaboratoryService {
             tree = null;
             errors = List.of("La salida del modelo no es un documento JSON valido.");
         }
-        return new DocumentLabResponse(properties.ollama().model(),
+        return new DocumentLabResponse(aiModelClient.model(),
                 (System.nanoTime() - start) / 1_000_000, raw, errors.isEmpty() ? tree : null, errors);
     }
 

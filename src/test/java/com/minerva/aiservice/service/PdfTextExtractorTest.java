@@ -43,6 +43,34 @@ class PdfTextExtractorTest {
         }
     }
 
+    @Test
+    void validatesNativePdfWithoutRequiringSelectableText() throws Exception {
+        try (PDDocument pdf = new PDDocument(); var bytes = new ByteArrayOutputStream()) {
+            pdf.addPage(new PDPage());
+            pdf.save(bytes);
+            byte[] content = bytes.toByteArray();
+
+            assertArrayEquals(content, extractor.validateAndRead(
+                    new MockMultipartFile("file", "scanned-plan.pdf",
+                            "application/pdf", content),
+                    100));
+        }
+    }
+
+    @Test
+    void enforcesClaudeNativePdfPageLimit() throws Exception {
+        try (PDDocument pdf = new PDDocument(); var bytes = new ByteArrayOutputStream()) {
+            for (int page = 0; page < 101; page++) {
+                pdf.addPage(new PDPage());
+            }
+            pdf.save(bytes);
+
+            assertThrows(PdfTextExtractor.PdfPageLimitException.class,
+                    () -> extractor.validateAndRead(new MockMultipartFile(
+                            "file", "plan.pdf", "application/pdf", bytes.toByteArray()), 100));
+        }
+    }
+
     // Input: PDF válido sin texto seleccionable.
     // Resultado esperado: NoExtractableTextException con mensaje de OCR no soportado.
     @Test
