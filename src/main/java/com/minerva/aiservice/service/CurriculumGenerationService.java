@@ -32,6 +32,16 @@ public class CurriculumGenerationService {
 
     private static final Logger LOGGER =
             Logger.getLogger(CurriculumGenerationService.class.getName());
+
+    /**
+     * Fix 3: presupuestos de contexto. El prompt completo (system + user)
+     * se mantiene acotado para no desbordar num_ctx del modelo, lo que
+     * causaba truncamientos en la entrada y salida incoherente.
+     */
+    private static final int MAX_NODE_INDEX_CHARS    = 12_000;
+    private static final int MAX_SOURCE_TEXT_CHARS   = 24_000;
+    private static final int MIN_SOURCE_BUDGET_CHARS = 3_000;
+
     private final PdfTextExtractor pdfTextExtractor;
     private final OllamaClient ollamaClient;
     private final ObjectMapper objectMapper;
@@ -174,10 +184,30 @@ public class CurriculumGenerationService {
         String system = threeLayerSystemPrompt();
         String user = threeLayerContextPrompt(request, sourceTexts);
         progress.accept("Consultando el modelo y preparando el arbol actualizado");
-        String raw = ollamaClient.generateStructured(
-                system,
-                user,
-                CurriculumGenerationSchema.schema());
+
+        // Fix 3: si Ollama trunca la respuesta (num_predict), reintentamos una
+        // vez con menos fuentes para que el modelo tenga presupuesto suficiente.
+        String raw;
+        try {
+            raw = ollamaClient.generateStructured(
+                    system,
+                    user,
+                    CurriculumGenerationSchema.schema());
+        } catch (OllamaClient.ModelOutputTruncatedException truncated) {
+            LOGGER.log(Level.WARNING,
+                    "REINTENTO_TRUNCAMIENTO: respuestaParcialChars={0}, fuentes={1}",
+                    new Object[]{truncated.getPartialContent().length(),
+                            sourceTexts.size()});
+            List<String> reduced = sourceTexts.size() > 1
+                    ? sourceTexts.subList(0, 1)
+                    : sourceTexts;
+            String reducedUser = threeLayerContextPrompt(request, reduced);
+            progress.accept("Reintentando con menos fuentes por limite del modelo");
+            raw = ollamaClient.generateStructured(
+                    system,
+                    reducedUser,
+                    CurriculumGenerationSchema.schema());
+        }
 
         JsonNode operations;
         try {
@@ -325,17 +355,26 @@ public class CurriculumGenerationService {
                 """;
     }
 
+    /**
+     * Fix 3: el indice de nodos se acota a MAX_NODE_INDEX_CHARS para no
+     * desbordar num_ctx con arboles grandes. Si se trunca, se indica al
+     * modelo con un marcador explicito.
+     */
     private String buildNodeIndex(JsonNode root) {
         StringBuilder index = new StringBuilder();
-        appendNodeIndex(root, null, index);
+        appendNodeIndex(root, null, index, MAX_NODE_INDEX_CHARS);
+        if (index.length() >= MAX_NODE_INDEX_CHARS) {
+            index.append("- ... (indice truncado por limite de contexto)\n");
+        }
         return index.toString();
     }
 
     private void appendNodeIndex(
             JsonNode node,
             String parentId,
-            StringBuilder index) {
-        if (node == null || !node.isObject()) {
+            StringBuilder index,
+            int maxChars) {
+        if (node == null || !node.isObject() || index.length() >= maxChars) {
             return;
         }
         String id = text(node, "id");
@@ -353,9 +392,42 @@ public class CurriculumGenerationService {
         JsonNode children = node.get("hijos");
         if (children != null && children.isArray()) {
             for (JsonNode child : children) {
-                appendNodeIndex(child, id, index);
+                appendNodeIndex(child, id, index, maxChars);
+                if (index.length() >= maxChars) {
+                    return;
+                }
             }
         }
+    }
+
+    /**
+     * Fix 3: reparte MAX_SOURCE_TEXT_CHARS entre las fuentes nuevas. Si hay
+     * muchas fuentes, cada una aporta un fragmento acotado; si hay pocas,
+     * cada una recibe un presupuesto amplio. Nunca supera el total.
+     */
+    private List<String> budgetSourceTexts(List<String> sourceTexts) {
+        if (sourceTexts == null || sourceTexts.isEmpty()) {
+            return List.of();
+        }
+        int perSource = Math.max(MIN_SOURCE_BUDGET_CHARS,
+                MAX_SOURCE_TEXT_CHARS / sourceTexts.size());
+        int remaining = MAX_SOURCE_TEXT_CHARS;
+        List<String> result = new ArrayList<>(sourceTexts.size());
+        for (String text : sourceTexts) {
+            int budget = Math.min(perSource, remaining);
+            if (budget <= 0) {
+                break;
+            }
+            if (text.length() <= budget) {
+                result.add(text);
+                remaining -= text.length();
+            } else {
+                int cut = Math.max(0, budget - 40);
+                result.add(text.substring(0, cut) + "\n... (fragmento truncado)");
+                remaining -= budget;
+            }
+        }
+        return result;
     }
 
     private String threeLayerContextPrompt(
@@ -371,7 +443,7 @@ public class CurriculumGenerationService {
                 """ + buildNodeIndex(request.arbol()) + """
 
                 Fuentes nuevas:
-                """ + String.join("\n\n", sourceTexts) + """
+                """ + String.join("\n\n", budgetSourceTexts(sourceTexts)) + """
 
                 Tarea:
                 Analiza solo las fuentes nuevas.
@@ -383,6 +455,12 @@ public class CurriculumGenerationService {
                 """;
     }
 
+    /**
+     * Fix 5: normalizacion conservadora. Solo se reemplazan comillas
+     * tipograficas por ASCII y se eliminan fences Markdown. Se eliminaron
+     * las regex multilinea previas, que corrompian descripciones con
+     * saltos de linea o patrones "clave: valor".
+     */
     private static String normalizeModelCharacters(String raw) {
         if (raw == null) {
             return "";
@@ -393,22 +471,20 @@ public class CurriculumGenerationService {
                 .replace('\u201C', '"')
                 .replace('\u201D', '"')
                 .replace('\u00A0', ' ')
-                .replace(" ", " ");
+                .trim();
 
-        normalized = normalized.replaceAll(
-                "\"([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9_]*)['?]+\\s*:",
-                "\"$1\":");
-        normalized = normalized.replaceAll(
-                "\"([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9_]*)['?]*\"\\s*:\\s*",
-                "\"$1\":");
-        normalized = normalized.replaceAll(
-                "(?m)^\\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9_]+)\\s*:",
-                "\"$1\":");
-        normalized = normalized.replaceAll(
-                "'([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9_]*)'\\s*:",
-                "\"$1\":");
-
-        return normalized.trim();
+        // Quita fences ```json ... ``` si el modelo las emitio pese al schema.
+        if (normalized.startsWith("```")) {
+            int firstNewline = normalized.indexOf('\n');
+            if (firstNewline > 0) {
+                normalized = normalized.substring(firstNewline + 1);
+            }
+            if (normalized.endsWith("```")) {
+                normalized = normalized.substring(0, normalized.length() - 3);
+            }
+            normalized = normalized.trim();
+        }
+        return normalized;
     }
 
     private static void normalizeNodeKeys(JsonNode node) {
