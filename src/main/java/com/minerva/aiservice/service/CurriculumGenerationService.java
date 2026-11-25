@@ -337,6 +337,9 @@ public class CurriculumGenerationService {
                 - Cada nodo nuevo debe usar "tipo", "nombre", "parentId" y opcionalmente "contenido".
                 - "parentId" debe referirse exactamente a un id existente del indice.
                 - unidad se agrega bajo la materia; tema bajo una unidad; concepto bajo un tema.
+                - Trata cada unidad como una rama independiente. Identifica la unidad de cada
+                  tema y concepto por la ruta del indice y agrega cada nodo bajo el parentId de
+                  su rama; nunca agrupes temas de unidades distintas bajo una sola unidad.
                 - No uses "id" nuevo para relacionar nodos.
                 - No agregues conceptos bajo otros conceptos.
                 - No repitas conceptos, temas o unidades existentes por nombre.
@@ -362,7 +365,7 @@ public class CurriculumGenerationService {
      */
     private String buildNodeIndex(JsonNode root) {
         StringBuilder index = new StringBuilder();
-        appendNodeIndex(root, null, index, MAX_NODE_INDEX_CHARS);
+        appendNodeIndex(root, null, "", index, MAX_NODE_INDEX_CHARS);
         if (index.length() >= MAX_NODE_INDEX_CHARS) {
             index.append("- ... (indice truncado por limite de contexto)\n");
         }
@@ -372,6 +375,7 @@ public class CurriculumGenerationService {
     private void appendNodeIndex(
             JsonNode node,
             String parentId,
+            String parentPath,
             StringBuilder index,
             int maxChars) {
         if (node == null || !node.isObject() || index.length() >= maxChars) {
@@ -380,10 +384,14 @@ public class CurriculumGenerationService {
         String id = text(node, "id");
         String type = text(node, "tipo");
         String name = text(node, "nombre");
+        String path = parentPath.isBlank()
+                ? name
+                : parentPath + " > " + name;
         if (!id.isBlank() && !type.isBlank() && !name.isBlank()) {
             index.append("- id=").append(id)
                     .append(", tipo=").append(type)
-                    .append(", nombre=").append(name);
+                    .append(", nombre=").append(name)
+                    .append(", ruta=").append(path);
             if (parentId != null) {
                 index.append(", parentId=").append(parentId);
             }
@@ -392,7 +400,7 @@ public class CurriculumGenerationService {
         JsonNode children = node.get("hijos");
         if (children != null && children.isArray()) {
             for (JsonNode child : children) {
-                appendNodeIndex(child, id, index, maxChars);
+                appendNodeIndex(child, id, path, index, maxChars);
                 if (index.length() >= maxChars) {
                     return;
                 }
@@ -440,6 +448,9 @@ public class CurriculumGenerationService {
                 - modoFusion: conservadora
 
                 Indice de nodos existentes:
+                Cada nodo incluye su ruta curricular completa. Usa la unidad de esa ruta para
+                decidir a que rama pertenece cada cambio y conserva la jerarquia unidad -> tema
+                -> concepto.
                 """ + buildNodeIndex(request.arbol()) + """
 
                 Fuentes nuevas:
@@ -447,6 +458,10 @@ public class CurriculumGenerationService {
 
                 Tarea:
                 Analiza solo las fuentes nuevas.
+                Reparte los temas y conceptos entre las unidades que correspondan por evidencia
+                en la fuente; no combines varias unidades ni sus temas en una sola rama. Para
+                cada nodo nuevo, usa como parentId el id exacto del padre correspondiente segun
+                su nivel en esa ruta.
                 Lista solo contenido nuevo para conceptos existentes usando conceptoId.
                 Emite como maximo 1 elemento en "contenidos" por conceptoId.
                 Revisa todos los conceptos del indice antes de decidir omitir uno.

@@ -63,7 +63,7 @@ class DocumentExtractionServiceTest {
         assertEquals("Igualdad",
                 result.units().get(0).topics().get(0).concepts().get(0).name());
         verify(ollama).generateStructured(
-                contains("unidad"),
+                contains("Cada unidad distinta debe ser un"),
                 contains("Unidad Algebra"),
                 eq(DocumentExtractionSchema.schema()));
     }
