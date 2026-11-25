@@ -42,7 +42,7 @@ class CurriculumGenerationControllerTest {
                         "qwen3:8b",
                         Duration.ofSeconds(180)),
                 new AiServiceProperties.Security(key),
-                new AiServiceProperties.Limits(10485760, 30000));
+                new AiServiceProperties.Limits(10485760, 30000, 4000000));
         mvc = MockMvcBuilders.standaloneSetup(
                         new CurriculumGenerationController(service))
                 .setControllerAdvice(new AiExceptionHandler())

@@ -81,6 +81,15 @@ public class DocumentTextExtractor {
         }
     }
 
+    public String extractForCurriculumSource(MultipartFile file) {
+        String filename = file == null ? null : file.getOriginalFilename();
+        if (filename != null
+                && filename.toLowerCase(Locale.ROOT).endsWith(".pdf")) {
+            return pdfTextExtractor.extractForCurriculumSource(file);
+        }
+        return extract(file);
+    }
+
     private String extractPowerPoint(MultipartFile file) {
         if (file.getSize() > properties.limits().maxPdfBytes()) {
             throw new ResponseStatusException(

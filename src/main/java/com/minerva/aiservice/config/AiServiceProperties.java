@@ -30,6 +30,7 @@ public record AiServiceProperties(
 
     public record Limits(
             @Positive long maxPdfBytes,
-            @Positive int maxExtractedCharacters) {
+            @Positive int maxExtractedCharacters,
+            @Positive int maxCurriculumSourceCharacters) {
     }
 }

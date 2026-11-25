@@ -34,6 +34,12 @@ public class PdfTextExtractor {
         return extract(readPdfUpload(file));
     }
 
+    public String extractForCurriculumSource(MultipartFile file) {
+        return extract(
+                readPdfUpload(file),
+                properties.limits().maxCurriculumSourceCharacters());
+    }
+
     public byte[] validateAndRead(MultipartFile file, int maxPages) {
         if (maxPages <= 0) {
             throw new IllegalArgumentException("maxPages must be positive.");
@@ -75,6 +81,10 @@ public class PdfTextExtractor {
     }
 
     public String extract(byte[] content) {
+        return extract(content, properties.limits().maxExtractedCharacters());
+    }
+
+    private String extract(byte[] content, int maxCharacters) {
         if (content == null || !hasPdfSignature(content)) {
             throw new InvalidPdfException("File content is not a PDF.");
         }
@@ -92,7 +102,7 @@ public class PdfTextExtractor {
             if (text.isBlank()) {
                 throw new NoExtractableTextException("PDF has no selectable text; OCR is not supported.");
             }
-            if (text.length() > properties.limits().maxExtractedCharacters()) {
+            if (text.length() > maxCharacters) {
                 throw new PdfTextTooLargeException("Extracted PDF text exceeds the configured limit.");
             }
             return text;

@@ -165,4 +165,68 @@ class CurriculumSourceIndexTest {
         assertTrue(indexed.contains("atributos"));
         assertTrue(indexed.contains("sobrescritura"));
     }
+
+    @Test
+    void filtersFrontMatterReferencesExercisesGlossaryAndIndexPages() {
+        String source = """
+                [DIAPOSITIVA]
+                Prefacio
+                Texto introductorio que no corresponde al contenido curricular.
+
+                [DIAPOSITIVA]
+                Contenido
+                Unidad 1 Introduccion 1
+                Unidad 2 Requerimientos 5
+                Unidad 3 Diseno 9
+                Unidad 4 Arquitectura 13
+                Unidad 5 Pruebas 17
+                Unidad 6 Evolucion 21
+
+                [DIAPOSITIVA]
+                Objetivos
+                Objetivos del primer tema curricular.
+
+                [DIAPOSITIVA]
+                Capitulo 1 Referencias
+                Referencias bibliograficas fuera del contenido didactico.
+
+                [DIAPOSITIVA]
+                Continuacion de las referencias con citas y paginas.
+
+                [DIAPOSITIVA]
+                Objetivos
+                Unidad 2: Requerimientos de software y especificacion.
+
+                [DIAPOSITIVA]
+                Ejercicios
+                Preguntas de repaso que no deben alimentar los conceptos.
+
+                [DIAPOSITIVA]
+                Continuacion de los ejercicios de evaluacion.
+
+                [DIAPOSITIVA]
+                Capitulo 3: Diseno arquitectonico
+                Componentes y conectores estructuran el sistema.
+
+                [DIAPOSITIVA]
+                Glosario
+                Definiciones alfabeticas no curriculares.
+
+                [DIAPOSITIVA]
+                Indice analitico
+                Terminos seguidos de numeros de pagina.
+                """;
+
+        String filtered = CurriculumSourceIndex.filterNonCurriculumPages(source);
+
+        assertTrue(filtered.contains("Objetivos del primer tema curricular"));
+        assertTrue(filtered.contains("Unidad 2: Requerimientos"));
+        assertTrue(filtered.contains("Componentes y conectores"));
+        assertFalse(filtered.contains("Prefacio"));
+        assertFalse(filtered.contains("Unidad 1 Introduccion 1"));
+        assertFalse(filtered.contains("Referencias bibliograficas"));
+        assertFalse(filtered.contains("Preguntas de repaso"));
+        assertFalse(filtered.contains("Definiciones alfabeticas"));
+        assertFalse(filtered.contains("Terminos seguidos"));
+    }
 }

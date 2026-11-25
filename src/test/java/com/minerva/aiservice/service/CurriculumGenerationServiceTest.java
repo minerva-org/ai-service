@@ -125,7 +125,7 @@ class CurriculumGenerationServiceTest {
                 List.of(),
                 "conservadora");
 
-        when(documentTextExtractor.extract(any(MultipartFile.class)))
+        when(documentTextExtractor.extractForCurriculumSource(any(MultipartFile.class)))
                 .thenReturn("Texto didactico sobre Scrum.");
         when(ollamaClient.generateStructured(anyString(), anyString(), anyMap()))
                 .thenReturn(generated);
@@ -220,7 +220,7 @@ class CurriculumGenerationServiceTest {
                         "ProgramacionOrientadaAObjetos.pdf")),
                 List.of(),
                 "conservadora");
-        when(documentTextExtractor.extract(any(MultipartFile.class)))
+        when(documentTextExtractor.extractForCurriculumSource(any(MultipartFile.class)))
                 .thenReturn("Escenario IV: Declarar una clase. Clases y objetos. "
                         + "Escenario V: Reutilizar codigo. Herencia y sobrescritura.");
         when(ollamaClient.generateStructured(anyString(), anyString(), anyMap()))
@@ -304,7 +304,7 @@ class CurriculumGenerationServiceTest {
                 List.of(),
                 "conservadora");
 
-        when(documentTextExtractor.extract(any(MultipartFile.class)))
+        when(documentTextExtractor.extractForCurriculumSource(any(MultipartFile.class)))
                 .thenReturn("El factorial de cero es uno.");
         when(ollamaClient.generateStructured(anyString(), anyString(), anyMap()))
                 .thenReturn(generated);
@@ -406,7 +406,7 @@ class CurriculumGenerationServiceTest {
                 List.of(),
                 "conservadora");
 
-        when(documentTextExtractor.extract(any(MultipartFile.class)))
+        when(documentTextExtractor.extractForCurriculumSource(any(MultipartFile.class)))
                 .thenReturn("Materia didactica.");
         when(ollamaClient.generateStructured(anyString(), anyString(), anyMap()))
                 .thenReturn(generated);

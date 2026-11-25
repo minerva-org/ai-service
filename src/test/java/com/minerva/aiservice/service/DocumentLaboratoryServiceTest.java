@@ -34,7 +34,7 @@ class DocumentLaboratoryServiceTest {
     private final AiServiceProperties properties = new AiServiceProperties(
             new AiServiceProperties.Ollama("http://ollama.test", "qwen3:8b", Duration.ofSeconds(180)),
             new AiServiceProperties.Security("a".repeat(32)),
-            new AiServiceProperties.Limits(10485760, 30000));
+            new AiServiceProperties.Limits(10485760, 30000, 4000000));
     private DocumentLaboratoryService service;
 
     @BeforeEach

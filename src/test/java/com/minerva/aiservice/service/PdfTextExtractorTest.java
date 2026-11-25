@@ -23,7 +23,7 @@ class PdfTextExtractorTest {
     private final PdfTextExtractor extractor = new PdfTextExtractor(new AiServiceProperties(
             new AiServiceProperties.Ollama("http://localhost", "qwen3:8b", Duration.ofSeconds(180)),
             new AiServiceProperties.Security("a".repeat(32)),
-            new AiServiceProperties.Limits(10485760, 30000)));
+            new AiServiceProperties.Limits(10485760, 30000, 4000000)));
 
     @Test
     void extractsSelectableTextFromUploadedPdf() throws Exception {
@@ -95,7 +95,7 @@ class PdfTextExtractorTest {
                 new AiServiceProperties.Ollama(
                         "http://localhost", "qwen3:8b", Duration.ofSeconds(180)),
                 new AiServiceProperties.Security("a".repeat(32)),
-                new AiServiceProperties.Limits(10485760, 10)));
+                new AiServiceProperties.Limits(10485760, 10, 100)));
 
         try (PDDocument pdf = new PDDocument(); var bytes = new ByteArrayOutputStream()) {
             pdf.addPage(new PDPage());
@@ -114,6 +114,36 @@ class PdfTextExtractorTest {
                     () -> limitedExtractor.extract(new MockMultipartFile(
                             "file", "largo.pdf", "application/pdf",
                             bytes.toByteArray())));
+        }
+    }
+
+    @Test
+    void allowsLargerTextBudgetForCurriculumSourcePdfs() throws Exception {
+        var sourceExtractor = new PdfTextExtractor(new AiServiceProperties(
+                new AiServiceProperties.Ollama(
+                        "http://localhost", "qwen3:8b", Duration.ofSeconds(180)),
+                new AiServiceProperties.Security("a".repeat(32)),
+                new AiServiceProperties.Limits(10485760, 10, 100)));
+
+        try (PDDocument pdf = new PDDocument(); var bytes = new ByteArrayOutputStream()) {
+            PDPage page = new PDPage();
+            pdf.addPage(page);
+            try (var content = new PDPageContentStream(pdf, page)) {
+                content.beginText();
+                content.setFont(
+                        new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+                content.newLineAtOffset(20, 700);
+                content.showText("Contenido curricular extenso");
+                content.endText();
+            }
+            pdf.save(bytes);
+            var file = new MockMultipartFile(
+                    "file", "fuente.pdf", "application/pdf", bytes.toByteArray());
+
+            assertThrows(PdfTextExtractor.PdfTextTooLargeException.class,
+                    () -> sourceExtractor.extract(file));
+            assertTrue(sourceExtractor.extractForCurriculumSource(file)
+                    .contains("Contenido curricular extenso"));
         }
     }
 

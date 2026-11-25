@@ -107,6 +107,8 @@ Los nodos y contenidos agregados por IA incluyen:
 Las fuentes nuevas pueden ser PDF o presentaciones PPTX. La IA conserva los nodos originales y solo agrega o alimenta contenido. No elimina, desactiva ni reemplaza nodos existentes.
 Al generar cambios, utiliza la ruta curricular completa de cada nodo para asignar temas y conceptos a la unidad correcta, sin mezclar ramas de unidades distintas.
 
+Para esta ruta, los PDF aceptan hasta 10 MiB y 4.000.000 caracteres extraídos por fuente (`AI_SERVICE_MAX_CURRICULUM_SOURCE_CHARS`); no tienen un límite fijo de páginas. Antes de seleccionar contenido, se descartan páginas iniciales de portada/índice, referencias y ejercicios por capítulo, y secciones finales de glosario e índices. El modelo recibe como máximo 24 fragmentos de 140 palabras, con un presupuesto conjunto de 24.000 caracteres para todas las fuentes. Esto permite leer libros extensos sin enviar índices ni el documento completo al contexto del modelo. La extracción inicial directa con Claude conserva su límite independiente de 100 páginas.
+
 Solo se procesan fuentes que no aparezcan en `fuentesProcesadas`. Si una fuente ya fue procesada, debe volver a subirse para formar parte de una nueva ejecución.
 
 ## Laboratorio de extraccion (DEV)

@@ -34,7 +34,7 @@ class DocumentControllerTest {
         var props = new AiServiceProperties(
                 new AiServiceProperties.Ollama("http://localhost", "qwen3:8b", Duration.ofSeconds(180)),
                 new AiServiceProperties.Security(key),
-                new AiServiceProperties.Limits(10485760, 30000));
+                new AiServiceProperties.Limits(10485760, 30000, 4000000));
         mvc = MockMvcBuilders.standaloneSetup(new DocumentController(service))
                 .setControllerAdvice(new AiExceptionHandler())
                 .addFilters(new ServiceKeyFilter(props))

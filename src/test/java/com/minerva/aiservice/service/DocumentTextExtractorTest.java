@@ -22,7 +22,7 @@ class DocumentTextExtractorTest {
             new AiServiceProperties.Ollama(
                     "http://localhost", "qwen3:8b", Duration.ofSeconds(10)),
             new AiServiceProperties.Security("a".repeat(32)),
-            new AiServiceProperties.Limits(1024 * 1024, 30000));
+            new AiServiceProperties.Limits(1024 * 1024, 30000, 4000000));
     private final PdfTextExtractor pdfExtractor = mock(PdfTextExtractor.class);
     private final DocumentTextExtractor extractor =
             new DocumentTextExtractor(pdfExtractor, properties);
@@ -45,6 +45,19 @@ class DocumentTextExtractorTest {
 
         assertTrue(text.contains("Unidad 1: Álgebra"));
         assertTrue(text.contains("Tema: Ecuaciones"));
+    }
+
+    @Test
+    void usesCurriculumSourcePdfExtractionForCurriculumFiles() {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "libro.pdf", "application/pdf", new byte[]{1});
+        when(pdfExtractor.extractForCurriculumSource(file))
+                .thenReturn("Contenido de una fuente extensa");
+
+        assertTrue(extractor.extractForCurriculumSource(file)
+                .contains("fuente extensa"));
+
+        verify(pdfExtractor).extractForCurriculumSource(file);
     }
 
     @Test

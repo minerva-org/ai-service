@@ -117,7 +117,8 @@ public class CurriculumGenerationService {
 
             try {
                 progress.accept("Extrayendo texto de " + fuente.nombre());
-                String text = documentTextExtractor.extract(file);
+                String text =
+                        documentTextExtractor.extractForCurriculumSource(file);
                 if (text == null || text.isBlank()) {
                     sourceResults.add(failedSource(fuente,
                             "La fuente no contiene texto legible."));
