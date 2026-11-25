@@ -59,9 +59,13 @@ class DocumentLaboratoryServiceTest {
         assertNotNull(result.tree());
         verify(ollama).generateStructured(
                 argThat(system -> system.contains("ROL") && system.contains("EXTRACCION")
-                        && system.contains("CONTRATO") && system.contains("plan de estudio")),
+                        && system.contains("CONTRATO") && system.contains("plan de estudio")
+                        && system.contains("mantén cada unidad distinta separada")),
                 contains("<document>\nUnidad Algebra."), eq(DocumentExtractionSchema.schema()));
         assertEquals(defaults, service.defaults());
+        assertTrue(defaults.prompts().instructions()
+                .contains("no fusiones unidades distintas"));
+        assertTrue(defaults.prompts().outputContract().contains("Unidad 2"));
     }
 
     @Test

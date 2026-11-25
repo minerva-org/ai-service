@@ -34,6 +34,11 @@ public class DocumentLaboratoryService {
                 """.strip(),
                 """
                 Organiza el contenido relevante en unidades, temas y conceptos.
+                Identifica primero cada unidad curricular distinta. Crea una unidad independiente
+                por cada encabezado de unidad o seccion equivalente de nivel superior, conserva su
+                nombre y orden, y no fusiones unidades distintas en una unidad generica.
+                Asigna cada tema a la unidad superior mas cercana y conserva sus conceptos bajo ese
+                tema; no mezcles temas ni conceptos entre unidades.
                 Conserva los nombres y el orden del documento cuando exista una jerarquia explicita.
                 Evita duplicados y excluye portadas, indices administrativos y bibliografia.
                 Si no hay contenido didactico identificable, devuelve {"units":[]}.
@@ -41,8 +46,10 @@ public class DocumentLaboratoryService {
                 """
                 Responde exclusivamente con JSON, sin Markdown ni explicaciones.
                 Usa nombres no vacios y la estructura units -> topics -> concepts.
+                Debe haber un elemento independiente en units por cada unidad distinta del
+                documento; no combines varias unidades en una sola.
                 Cada unidad debe tener temas y cada tema conceptos.
-                Ejemplo: {"units":[{"name":"Unidad 1","topics":[{"name":"Tema 1","concepts":[{"name":"Concepto 1"}]}]}]}
+                Ejemplo con dos unidades independientes: {"units":[{"name":"Unidad 1","topics":[{"name":"Tema 1","concepts":[{"name":"Concepto 1"}]}]},{"name":"Unidad 2","topics":[{"name":"Tema 2","concepts":[{"name":"Concepto 2"}]}]}]}
                 No agregues propiedades fuera del esquema.
                 """.strip()), aiModelClient.model(), properties.limits().maxPdfBytes());
     }
@@ -51,8 +58,12 @@ public class DocumentLaboratoryService {
         long start = System.nanoTime();
         String text = pdfTextExtractor.extract(file);
         String sourceInstructions = switch (request.sourceType()) {
-            case STUDY_PLAN -> "La fuente es un plan de estudio: extrae su estructura explicita; no completes temas ausentes.";
-            case SOURCE_MATERIAL -> "La fuente es material didactico: puedes organizarlo pedagogicamente, sin agregar conocimientos externos.";
+            case STUDY_PLAN -> "La fuente es un plan de estudio: extrae su estructura explicita; "
+                    + "mantén cada unidad distinta separada y no completes temas ausentes.";
+            case SOURCE_MATERIAL -> "La fuente es material didactico: puedes organizarlo "
+                    + "pedagogicamente, sin agregar conocimientos externos. Si presenta varias "
+                    + "unidades o secciones curriculares de nivel superior, mantenlas como unidades "
+                    + "separadas y asigna cada tema y concepto a su unidad correspondiente.";
         };
         ExtractionPrompts prompts = request.prompts();
         String system = String.join("\n\n", prompts.role(), prompts.instructions(),

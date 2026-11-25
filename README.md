@@ -43,6 +43,8 @@ El servidor escucha en las interfaces del host para aceptar la conexión desde D
 
 Requiere `X-AI-Service-Key` y `multipart/form-data` con campo `file`. Acepta PDF y DOCX de hasta 10 MiB y devuelve `units → topics → concepts`. Con Claude, los PDF se envían como documentos nativos (hasta 100 páginas), preservando tablas e imágenes; los DOCX se convierten a texto porque la API no acepta DOCX como documento binario. Ollama recibe texto extraído. El modelo analiza la entrada completa en una sola llamada, no agrega conocimientos externos y la respuesta solo se devuelve si cumple el esquema. Una respuesta truncada o incompleta genera un error; no se reintenta ni se devuelve JSON parcial.
 
+La extracción conserva cada unidad curricular de nivel superior como una unidad independiente y asigna sus temas y conceptos a esa unidad; no agrupa varias unidades bajo una unidad genérica.
+
 ### Generar quiz
 
 `POST /quizzes/generate`
@@ -103,6 +105,7 @@ Los nodos y contenidos agregados por IA incluyen:
 ```
 
 La IA conserva los nodos originales y solo agrega o alimenta contenido. No elimina, desactiva ni reemplaza nodos existentes.
+Al generar cambios, utiliza la ruta curricular completa de cada nodo para asignar temas y conceptos a la unidad correcta, sin mezclar ramas de unidades distintas.
 
 Solo se procesan fuentes que no aparezcan en `fuentesProcesadas`. Si una fuente ya fue procesada, debe volver a subirse para formar parte de una nueva ejecución.
 

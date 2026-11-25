@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -148,6 +149,10 @@ class CurriculumGenerationServiceTest {
         assertEquals("pendiente_revision",
                 newNode.get("revisionEstado").asString());
         assertEquals("procesada", response.fuentesResultado().get(0).estado());
+        verify(ollamaClient).generateStructured(
+                contains("cada unidad como una rama independiente"),
+                contains("ruta="),
+                anyMap());
     }
 
     @Test

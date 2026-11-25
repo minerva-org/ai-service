@@ -45,14 +45,24 @@ public class DocumentExtractionService {
                 identificable respetando el orden en que aparece y represéntalo únicamente como:
                 unidad -> tema -> concepto.
                 Incluye todas las unidades, todos los temas de cada unidad y todos los conceptos
-                asociados a cada tema. No te detengas tras la primera unidad y no resumas ni reduzcas
-                listas para ahorrar espacio.
+                asociados a cada tema. Primero identifica las unidades distintas del documento y
+                despues asigna a cada una sus temas y conceptos. Cada unidad distinta debe ser un
+                elemento independiente de "units", en el mismo orden en que aparece. No te detengas
+                tras la primera unidad, no combines unidades distintas en una sola y no resumas ni
+                reduzcas listas para ahorrar espacio.
 
                 ## Cómo identificar los niveles
                 - Usa los títulos, numeración, niveles de encabezado, tablas, viñetas y el contexto
                   inmediato para reconocer la jerarquía del plan.
                 - Una unidad es una sección curricular de nivel superior explícita o inequívocamente
                   indicada por el documento.
+                - Cada encabezado distinto de unidad (por ejemplo, "Unidad 1", "Unidad II",
+                  "Bloque 1" o un título equivalente claramente situado al nivel superior) inicia
+                  una unidad nueva. Conserva su título y numeración; no agrupes varias unidades
+                  bajo una unidad genérica ni conviertas sus títulos en temas.
+                - Los encabezados de tema pertenecen a la unidad superior más cercana. Mantén cada
+                  tema y sus conceptos dentro de esa unidad; no los reasignes a otra unidad ni los
+                  repartas entre unidades por similitud temática.
                 - Un tema es una sección o bloque de contenido que pertenece a una unidad.
                 - Un concepto es el objeto de aprendizaje más específico que el documento enumera,
                   define o describe dentro de un tema: contenido, principio, método, habilidad,
@@ -68,14 +78,18 @@ public class DocumentExtractionService {
                   contenido curricular de un tema.
 
                 ## Integridad y salida
-                Cada unidad debe tener al menos un tema y cada tema al menos un concepto. Si hay
+                Cada unidad debe tener al menos un tema y cada tema al menos un concepto. Antes de
+                responder, comprueba que cada encabezado de unidad identificado tenga su propio
+                elemento en "units" y que sus temas y conceptos sigan bajo esa unidad. Si hay
                 contenido curricular suficiente pero no está etiquetado literalmente como
                 "concepto", identifica conceptos solo a partir de los contenidos u objetivos
                 explícitos del tema; no los deduzcas de conocimiento externo. Omite las ramas que no
                 puedan completar los tres niveles con evidencia del documento.
                 Si no existe ninguna jerarquía curricular utilizable, devuelve {"units":[]}.
                 Devuelve exclusivamente un objeto JSON que cumpla exactamente el esquema recibido:
-                {"units":[{"name":"Unidad","topics":[{"name":"Tema","concepts":[{"name":"Concepto"}]}]}]}.
+                Si el documento tiene dos unidades distintas, deben aparecer como dos objetos
+                hermanos en "units", por ejemplo:
+                {"units":[{"name":"Unidad 1: Fundamentos","topics":[{"name":"Tema 1","concepts":[{"name":"Concepto 1"}]}]},{"name":"Unidad 2: Aplicaciones","topics":[{"name":"Tema 2","concepts":[{"name":"Concepto 2"}]}]}]}.
                 No incluyas explicaciones, Markdown, texto adicional ni campos distintos de los
                 definidos en el esquema.
                 """;
