@@ -10,6 +10,7 @@ public record QuizGenerationResponse(@NotEmpty List<@Valid QuestionDTO> question
 
     public record QuestionDTO(
             @NotBlank String conceptId,
+            @NotBlank String conceptName,
             @NotBlank String question,
             @NotBlank String evidence,
             @NotEmpty List<@Valid OptionDTO> options) {

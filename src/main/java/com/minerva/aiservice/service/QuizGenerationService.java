@@ -2,6 +2,7 @@ package com.minerva.aiservice.service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -47,11 +48,12 @@ public class QuizGenerationService {
                 - Los distractores pueden generarse con libertad, pero deben ser cercanos,
                   plausibles y distinguirse claramente de la respuesta correcta.
                 - Conserva el conceptId recibido.
+                - Conserva también el nombre exacto recibido en "conceptName". No lo inventes ni lo parafrasees.
                 - No incluyas conceptos que no tengan contenido relacionado.
                 - Si el contenido recibido no permite crear una pregunta inequívoca, omite ese concepto.
                 - Devuelve exclusivamente JSON valido conforme al esquema.
                 - Ejemplo JSON válido:
-                  {"questions":[{"conceptId":"CONCEPTO-1","question":"¿Qué operación inserta un elemento al inicio?","evidence":"Push inserta un elemento al inicio.","options":[{"text":"Push","isCorrect":true},{"text":"Pop","isCorrect":false},{"text":"Peek","isCorrect":false},{"text":"Sort","isCorrect":false}]}]}
+                  {"questions":[{"conceptId":"CONCEPTO-1","conceptName":"Pilas","question":"¿Qué operación inserta un elemento al inicio?","evidence":"Push inserta un elemento al inicio.","options":[{"text":"Push","isCorrect":true},{"text":"Pop","isCorrect":false},{"text":"Peek","isCorrect":false},{"text":"Sort","isCorrect":false}]}]}
                 - Ejemplo JSON inválido:
                   {"questions":[{"conceptId":"CONCEPTO-1","question":"¿Qué operación inserta?","options":[{"text":"Push","esCorrecta":true},{"text":"Pop","esCorrecta":false}]}]}
                 - El segundo ejemplo es inválido porque usa "esCorrecta" en lugar de "isCorrect",
@@ -62,7 +64,30 @@ public class QuizGenerationService {
                 systemPrompt, toJson(request), quizSchema());
         QuizGenerationResponse result;
         try {
-            result = objectMapper.readValue(raw, QuizGenerationResponse.class);
+            tools.jackson.databind.JsonNode rawResult =
+                    objectMapper.readTree(raw);
+            tools.jackson.databind.JsonNode questions =
+                    rawResult.get("questions");
+            if (questions != null && questions.isArray()) {
+                Map<String, String> conceptNames =
+                        request.concepts().stream()
+                                .collect(Collectors.toMap(
+                                        QuizGenerationRequest.ConceptInput::id,
+                                        QuizGenerationRequest.ConceptInput::name));
+                for (tools.jackson.databind.JsonNode question : questions) {
+                    if (question instanceof tools.jackson.databind.node.ObjectNode object
+                            && (!object.has("conceptName")
+                                || object.path("conceptName").asString().isBlank())) {
+                        String conceptName =
+                                conceptNames.get(object.path("conceptId").asString());
+                        if (conceptName != null) {
+                            object.put("conceptName", conceptName);
+                        }
+                    }
+                }
+            }
+            result = objectMapper.treeToValue(
+                    rawResult, QuizGenerationResponse.class);
         } catch (tools.jackson.core.JacksonException exception) {
             LOGGER.log(Level.WARNING,
                     "QUIZ_RESPUESTA_INVALIDA: respuesta={0}, detalle={1}",
@@ -71,7 +96,7 @@ public class QuizGenerationService {
                     "El proveedor devolvió JSON inválido para el quiz.",
                     exception);
         }
-        ensureValid(result, request);
+        result = retainValidQuestions(result, request);
         LOGGER.log(Level.INFO,
                 "QUIZ_GENERACION_OK: conceptos={0}, preguntas={1}",
                 new Object[]{request.concepts().size(),
@@ -91,13 +116,16 @@ public class QuizGenerationService {
                 "type", "object",
                 "properties", Map.of(
                         "conceptId", Map.of("type", "string", "minLength", 1),
+                        "conceptName", Map.of("type", "string", "minLength", 1),
                         "question", Map.of("type", "string", "minLength", 1),
                         "evidence", Map.of("type", "string", "minLength", 1),
                         "options", Map.of(
                                 "type", "array",
                                 "items", option,
                                 "minItems", 2)),
-                "required", List.of("conceptId", "question", "evidence", "options"),
+                "required", List.of(
+                        "conceptId", "conceptName",
+                        "question", "evidence", "options"),
                 "additionalProperties", false);
         return Map.of(
                 "type", "object",
@@ -110,23 +138,26 @@ public class QuizGenerationService {
                 "additionalProperties", false);
     }
 
-    private void ensureValid(QuizGenerationResponse result, QuizGenerationRequest request) {
-        if (!validator.validate(result).isEmpty()) {
-            LOGGER.log(Level.WARNING,
-                    "QUIZ_CONTRATO_INVALIDO: respuesta={0}",
-                    objectMapper.valueToTree(result));
-            throw new AiModelClient.InvalidModelResponseException(
-                    "Model output did not match the quiz schema.");
-        }
-
-        Map<String, List<String>> conceptContents = request.concepts().stream()
+    private QuizGenerationResponse retainValidQuestions(
+            QuizGenerationResponse result,
+            QuizGenerationRequest request) {
+        Map<String, QuizGenerationRequest.ConceptInput> conceptsById =
+                request.concepts().stream()
                 .collect(Collectors.toMap(
                         QuizGenerationRequest.ConceptInput::id,
-                        concept -> concept.content().stream()
-                                .map(QuizGenerationRequest.ContentInput::description)
-                                .toList()));
+                        concept -> concept));
 
+        List<QuizGenerationResponse.QuestionDTO> validQuestions =
+                new ArrayList<>();
         for (QuizGenerationResponse.QuestionDTO question : result.questions()) {
+            if (question == null
+                    || !validator.validate(question).isEmpty()
+                    || question.question() == null
+                    || question.question().isBlank()) {
+                LOGGER.log(Level.WARNING,
+                        "QUIZ_PREGUNTA_DESCARTADA: motivo=contrato");
+                continue;
+            }
             long correctOptions = question.options().stream()
                     .filter(QuizGenerationResponse.OptionDTO::isCorrect)
                     .count();
@@ -134,17 +165,26 @@ public class QuizGenerationService {
                 LOGGER.log(Level.WARNING,
                         "QUIZ_RESPUESTA_INVALIDA: conceptId={0}, respuestasCorrectas={1}",
                         new Object[]{question.conceptId(), correctOptions});
-                throw new AiModelClient.InvalidModelResponseException(
-                        "Each generated question must have exactly one correct option.");
+                continue;
             }
-            List<String> contents = conceptContents.get(question.conceptId());
-            if (contents == null) {
+            QuizGenerationRequest.ConceptInput concept =
+                    conceptsById.get(question.conceptId());
+            if (concept == null) {
                 LOGGER.log(Level.WARNING,
                         "QUIZ_RESPUESTA_INVALIDA: conceptIdDesconocido={0}",
                         question.conceptId());
-                throw new AiModelClient.InvalidModelResponseException(
-                        "Generated question references a concept that was not selected.");
+                continue;
             }
+            if (!concept.name().equalsIgnoreCase(question.conceptName())) {
+                LOGGER.log(Level.WARNING,
+                        "QUIZ_RESPUESTA_INVALIDA: conceptId={0}, conceptoEsperado={1}, conceptoRecibido={2}",
+                        new Object[]{question.conceptId(),
+                                concept.name(), question.conceptName()});
+                continue;
+            }
+            List<String> contents = concept.content().stream()
+                    .map(QuizGenerationRequest.ContentInput::description)
+                    .toList();
             String normalizedEvidence = normalize(question.evidence());
             if (contents.stream().map(QuizGenerationService::normalize)
                     .noneMatch(content -> content.contains(normalizedEvidence)
@@ -152,10 +192,20 @@ public class QuizGenerationService {
                 LOGGER.log(Level.WARNING,
                         "QUIZ_RESPUESTA_INVALIDA: conceptId={0}, evidenciaNoEncontrada=true",
                         question.conceptId());
-                throw new AiModelClient.InvalidModelResponseException(
-                        "Generated question evidence was not taken from its concept content.");
+                continue;
             }
+            validQuestions.add(question);
         }
+        if (validQuestions.isEmpty()) {
+            throw new AiModelClient.InvalidModelResponseException(
+                    "No valid quiz questions remained after validation.");
+        }
+        LOGGER.log(Level.INFO,
+                "QUIZ_PREGUNTAS_VALIDAS: recibidas={0}, conservadas={1}, descartadas={2}",
+                new Object[]{result.questions().size(),
+                        validQuestions.size(),
+                        result.questions().size() - validQuestions.size()});
+        return new QuizGenerationResponse(validQuestions);
     }
 
     private static String normalize(String value) {
