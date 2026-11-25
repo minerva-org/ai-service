@@ -93,6 +93,38 @@ class DocumentExtractionServiceTest {
     }
 
     @Test
+    void extractsPowerPointSlidesAndAppliesScenarioHeadingRules() {
+        MockMultipartFile presentation = new MockMultipartFile(
+                "file",
+                "programacion.pptx",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                new byte[]{1});
+        when(extractor.extract(presentation)).thenReturn(
+                "[DIAPOSITIVA 1]\nEscenario IV: Declarar una clase\n"
+                        + "[DIAPOSITIVA 2]\nEscenario V: Herencia");
+        when(ollama.generateStructured(anyString(), anyString(), anyMap()))
+                .thenReturn("""
+                        {"units":[
+                          {"name":"Escenario IV: Declarar una clase","topics":[
+                            {"name":"Clases y objetos","concepts":[{"name":"Clase"}]}
+                          ]},
+                          {"name":"Escenario V: Herencia","topics":[
+                            {"name":"Jerarquía","concepts":[{"name":"Sobrescritura"}]}
+                          ]}
+                        ]}
+                        """);
+
+        DocumentExtractionResponse result = service.extract(presentation);
+
+        assertEquals(2, result.units().size());
+        verify(extractor).extract(presentation);
+        verify(ollama).generateStructured(
+                contains("Escenario IV"),
+                contains("[DIAPOSITIVA 1]"),
+                eq(DocumentExtractionSchema.schema()));
+    }
+
+    @Test
     void givesClaudeTheOriginalPdfInsteadOfOnlyExtractedText() {
         byte[] pdf = new byte[]{1, 2, 3};
         when(ollama.supportsNativePdfInput()).thenReturn(true);

@@ -110,4 +110,59 @@ class CurriculumSourceIndexTest {
         assertFalse(indexed.isBlank());
         assertTrue(indexed.contains("Recursividad"));
     }
+
+    @Test
+    void keepsRelevantFragmentsFromEveryExistingUnit() throws Exception {
+        var tree = objectMapper.readTree("""
+                {
+                  "tipo": "materia",
+                  "nombre": "Programacion Orientada a Objetos",
+                  "hijos": [
+                    {
+                      "tipo": "unidad",
+                      "nombre": "Fundamentos",
+                      "hijos": [
+                        {
+                          "tipo": "tema",
+                          "nombre": "Clases y objetos",
+                          "hijos": [
+                            {"tipo": "concepto", "nombre": "Atributos"}
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "tipo": "unidad",
+                      "nombre": "Herencia",
+                      "hijos": [
+                        {
+                          "tipo": "tema",
+                          "nombre": "Jerarquia",
+                          "hijos": [
+                            {"tipo": "concepto", "nombre": "Sobrescritura"}
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """);
+        String text = """
+                Unidad 1: Fundamentos
+
+                Las clases definen objetos y sus atributos.
+
+                """ + "Contenido de otra seccion sin relacion.\\n\\n".repeat(30) + """
+                Escenario V: Herencia
+
+                La sobrescritura cambia la implementacion heredada y la jerarquia relaciona clases.
+                """;
+
+        String indexed = CurriculumSourceIndex.selectRelevantFragments(text, tree);
+
+        assertTrue(indexed.contains("Unidad curricular: Fundamentos"));
+        assertTrue(indexed.contains("Unidad curricular: Herencia"));
+        assertTrue(indexed.contains("atributos"));
+        assertTrue(indexed.contains("sobrescritura"));
+    }
 }

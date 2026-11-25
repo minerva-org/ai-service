@@ -50,6 +50,13 @@ public class DocumentExtractionService {
                 elemento independiente de "units", en el mismo orden en que aparece. No te detengas
                 tras la primera unidad, no combines unidades distintas en una sola y no resumas ni
                 reduzcas listas para ahorrar espacio.
+                Si el documento es una presentacion o un PDF exportado de diapositivas, analiza
+                cada diapositiva y sus limites. Una seccion titulada "Escenario IV", "Escenario V"
+                u otro escenario numerado es una unidad independiente cuando introduce un bloque
+                curricular nuevo; conserva el nombre completo del encabezado en lugar de sustituirlo
+                por un titulo generico. Las diapositivas "Contenidos" o equivalentes son inventarios
+                curriculares: conserva todos sus elementos como temas o conceptos bajo la unidad
+                correspondiente. Los encabezados repetidos de las diapositivas no son unidades nuevas.
 
                 ## Cómo identificar los niveles
                 - Usa los títulos, numeración, niveles de encabezado, tablas, viñetas y el contexto
@@ -57,12 +64,14 @@ public class DocumentExtractionService {
                 - Una unidad es una sección curricular de nivel superior explícita o inequívocamente
                   indicada por el documento.
                 - Cada encabezado distinto de unidad (por ejemplo, "Unidad 1", "Unidad II",
-                  "Bloque 1" o un título equivalente claramente situado al nivel superior) inicia
-                  una unidad nueva. Conserva su título y numeración; no agrupes varias unidades
-                  bajo una unidad genérica ni conviertas sus títulos en temas.
+                  "Bloque 1", "Escenario IV" o un título equivalente claramente situado al nivel
+                  superior) inicia una unidad nueva. Conserva su título y numeración; no agrupes
+                  varias unidades bajo una unidad genérica ni conviertas sus títulos en temas.
                 - Los encabezados de tema pertenecen a la unidad superior más cercana. Mantén cada
                   tema y sus conceptos dentro de esa unidad; no los reasignes a otra unidad ni los
                   repartas entre unidades por similitud temática.
+                - En listas explícitas de contenidos, conserva cada elemento curricular. No omitas
+                  los elementos posteriores de una lista ni los sustituyas por un concepto general.
                 - Un tema es una sección o bloque de contenido que pertenece a una unidad.
                 - Un concepto es el objeto de aprendizaje más específico que el documento enumera,
                   define o describe dentro de un tema: contenido, principio, método, habilidad,

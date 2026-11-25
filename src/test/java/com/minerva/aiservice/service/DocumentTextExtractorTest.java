@@ -10,6 +10,7 @@ import java.io.ByteArrayOutputStream;
 import java.time.Duration;
 
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xslf.usermodel.XMLSlideShow;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.server.ResponseStatusException;
@@ -44,6 +45,35 @@ class DocumentTextExtractorTest {
 
         assertTrue(text.contains("Unidad 1: Álgebra"));
         assertTrue(text.contains("Tema: Ecuaciones"));
+    }
+
+    @Test
+    void extractsSlideTextAndKeepsSlideBoundariesFromPptx() throws Exception {
+        byte[] content;
+        try (XMLSlideShow presentation = new XMLSlideShow();
+                ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            var firstSlide = presentation.createSlide();
+            firstSlide.createTextBox().setText("Unidad 1: Fundamentos");
+            var secondSlide = presentation.createSlide();
+            secondSlide.createTextBox().setText("Unidad 2: Aplicaciones");
+            var table = secondSlide.createTable();
+            var row = table.addRow();
+            row.addCell().setText("Concepto");
+            row.addCell().setText("Método");
+            presentation.write(output);
+            content = output.toByteArray();
+        }
+
+        String text = extractor.extract(new MockMultipartFile(
+                "file",
+                "plan.pptx",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                content));
+
+        assertTrue(text.contains("[DIAPOSITIVA 1]\nUnidad 1: Fundamentos"));
+        assertTrue(text.contains("[DIAPOSITIVA 2]\nUnidad 2: Aplicaciones"));
+        assertTrue(text.contains("Concepto"));
+        assertTrue(text.contains("Método"));
     }
 
     @Test

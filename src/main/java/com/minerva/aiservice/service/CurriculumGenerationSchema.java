@@ -1,6 +1,7 @@
 package com.minerva.aiservice.service;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -31,6 +32,7 @@ final class CurriculumGenerationSchema {
         Map<String, Object> newNode = Map.of(
                 "type", "object",
                 "properties", Map.of(
+                        "tempId", Map.of("type", "string", "minLength", 1),
                         "tipo", Map.of("type", "string",
                                 "enum", List.of("unidad", "tema", "concepto")),
                         "nombre", Map.of("type", "string", "minLength", 1),
@@ -38,7 +40,7 @@ final class CurriculumGenerationSchema {
                         "contenido", Map.of(
                                 "type", "array",
                                 "items", newNodeContent)),
-                "required", List.of("tipo", "nombre", "parentId"),
+                "required", List.of("tempId", "tipo", "nombre", "parentId"),
                 "additionalProperties", false);
 
         return Map.of(
@@ -116,6 +118,7 @@ final class CurriculumGenerationSchema {
             errors.add("$.operaciones.nodos: se esperaba una lista.");
         } else {
             Set<String> types = Set.of("unidad", "tema", "concepto");
+            Set<String> tempIds = new HashSet<>();
             for (int i = 0; i < nodos.size(); i++) {
                 JsonNode item = nodos.get(i);
                 String path = "$.operaciones.nodos[" + i + "]";
@@ -123,9 +126,16 @@ final class CurriculumGenerationSchema {
                     errors.add(path + ": se esperaba un objeto.");
                     continue;
                 }
+                requireText(item, "tempId", path, errors);
                 requireText(item, "tipo", path, errors);
                 requireText(item, "nombre", path, errors);
                 requireText(item, "parentId", path, errors);
+                JsonNode tempId = item.get("tempId");
+                if (tempId != null && tempId.isString()
+                        && !tempId.asString().isBlank()
+                        && !tempIds.add(tempId.asString())) {
+                    errors.add(path + ".tempId: la referencia temporal debe ser unica.");
+                }
                 JsonNode type = item.get("tipo");
                 if (type != null && type.isString()
                         && !types.contains(type.asString())) {

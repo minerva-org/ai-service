@@ -28,18 +28,18 @@ import tools.jackson.databind.ObjectMapper;
 
 class CurriculumGenerationServiceTest {
 
-    private PdfTextExtractor pdfTextExtractor;
+    private DocumentTextExtractor documentTextExtractor;
     private OllamaClient ollamaClient;
     private ObjectMapper objectMapper;
     private CurriculumGenerationService service;
 
     @BeforeEach
     void setUp() {
-        pdfTextExtractor = mock(PdfTextExtractor.class);
+        documentTextExtractor = mock(DocumentTextExtractor.class);
         ollamaClient = mock(OllamaClient.class);
         objectMapper = new ObjectMapper();
         service = new CurriculumGenerationService(
-                pdfTextExtractor,
+                documentTextExtractor,
                 ollamaClient,
                 objectMapper);
     }
@@ -101,6 +101,7 @@ class CurriculumGenerationServiceTest {
                   ],
                   "nodos": [
                     {
+                      "tempId": "sprint-review",
                       "tipo": "concepto",
                       "nombre": "Sprint Review",
                       "parentId": "TG-1",
@@ -124,7 +125,7 @@ class CurriculumGenerationServiceTest {
                 List.of(),
                 "conservadora");
 
-        when(pdfTextExtractor.extract(any(MultipartFile.class)))
+        when(documentTextExtractor.extract(any(MultipartFile.class)))
                 .thenReturn("Texto didactico sobre Scrum.");
         when(ollamaClient.generateStructured(anyString(), anyString(), anyMap()))
                 .thenReturn(generated);
@@ -153,6 +154,102 @@ class CurriculumGenerationServiceTest {
                 contains("cada unidad como una rama independiente"),
                 contains("ruta="),
                 anyMap());
+    }
+
+    @Test
+    void createsNewUnitsWithTheirTopicsAndConceptsInOneResponse() throws Exception {
+        JsonNode original = objectMapper.readTree("""
+                {
+                  "id": "MAT-1",
+                  "tipo": "materia",
+                  "nombre": "Programacion Orientada a Objetos",
+                  "hijos": []
+                }
+                """);
+        String generated = """
+                {
+                  "contenidos": [],
+                  "nodos": [
+                    {
+                      "tempId": "concepto-1",
+                      "tipo": "concepto",
+                      "nombre": "Clase",
+                      "parentId": "tema-1",
+                      "contenido": [{"descripcion": "Plantilla para crear objetos."}]
+                    },
+                    {
+                      "tempId": "tema-1",
+                      "tipo": "tema",
+                      "nombre": "Clases y objetos",
+                      "parentId": "unidad-1"
+                    },
+                    {
+                      "tempId": "unidad-1",
+                      "tipo": "unidad",
+                      "nombre": "Fundamentos de POO",
+                      "parentId": "MAT-1"
+                    },
+                    {
+                      "tempId": "unidad-2",
+                      "tipo": "unidad",
+                      "nombre": "Herencia",
+                      "parentId": "MAT-1"
+                    },
+                    {
+                      "tempId": "tema-2",
+                      "tipo": "tema",
+                      "nombre": "Jerarquia de herencia",
+                      "parentId": "unidad-2"
+                    },
+                    {
+                      "tempId": "concepto-2",
+                      "tipo": "concepto",
+                      "nombre": "Sobrescritura",
+                      "parentId": "tema-2",
+                      "contenido": [{"descripcion": "Redefine un metodo heredado."}]
+                    }
+                  ]
+                }
+                """;
+        CurriculumGenerationRequest request = new CurriculumGenerationRequest(
+                "GRP-1",
+                original,
+                List.of(new CurriculumGenerationRequest.FuenteNueva(
+                        "DOC-102",
+                        "def789",
+                        "ProgramacionOrientadaAObjetos.pdf")),
+                List.of(),
+                "conservadora");
+        when(documentTextExtractor.extract(any(MultipartFile.class)))
+                .thenReturn("Escenario IV: Declarar una clase. Clases y objetos. "
+                        + "Escenario V: Reutilizar codigo. Herencia y sobrescritura.");
+        when(ollamaClient.generateStructured(anyString(), anyString(), anyMap()))
+                .thenReturn(generated);
+
+        CurriculumGenerationResponse response = service.generate(
+                request,
+                new MockMultipartFile[]{
+                        new MockMultipartFile(
+                                "files",
+                                "ProgramacionOrientadaAObjetos.pdf",
+                                "application/pdf",
+                                new byte[]{1})});
+
+        JsonNode units = response.arbol().get("hijos");
+        assertEquals(2, units.size());
+        assertEquals("Fundamentos de POO", units.get(0).get("nombre").asString());
+        assertEquals("Clases y objetos",
+                units.get(0).at("/hijos/0/nombre").asString());
+        assertEquals("Clase",
+                units.get(0).at("/hijos/0/hijos/0/nombre").asString());
+        assertEquals("Plantilla para crear objetos.",
+                units.get(0).at("/hijos/0/hijos/0/contenido/0/descripcion").asString());
+        assertEquals("Herencia",
+                units.get(1).get("nombre").asString());
+        assertEquals("Sobrescritura",
+                units.get(1).at("/hijos/0/hijos/0/nombre").asString());
+        assertEquals("Redefine un metodo heredado.",
+                units.get(1).at("/hijos/0/hijos/0/contenido/0/descripcion").asString());
     }
 
     @Test
@@ -207,7 +304,7 @@ class CurriculumGenerationServiceTest {
                 List.of(),
                 "conservadora");
 
-        when(pdfTextExtractor.extract(any(MultipartFile.class)))
+        when(documentTextExtractor.extract(any(MultipartFile.class)))
                 .thenReturn("El factorial de cero es uno.");
         when(ollamaClient.generateStructured(anyString(), anyString(), anyMap()))
                 .thenReturn(generated);
@@ -309,7 +406,7 @@ class CurriculumGenerationServiceTest {
                 List.of(),
                 "conservadora");
 
-        when(pdfTextExtractor.extract(any(MultipartFile.class)))
+        when(documentTextExtractor.extract(any(MultipartFile.class)))
                 .thenReturn("Materia didactica.");
         when(ollamaClient.generateStructured(anyString(), anyString(), anyMap()))
                 .thenReturn(generated);

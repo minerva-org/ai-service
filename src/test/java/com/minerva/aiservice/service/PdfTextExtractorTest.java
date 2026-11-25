@@ -38,8 +38,10 @@ class PdfTextExtractorTest {
                 content.endText();
             }
             pdf.save(bytes);
-            assertEquals("Unidad Algebra", extractor.extract(new MockMultipartFile(
-                    "file", "plan.pdf", "application/pdf", bytes.toByteArray())));
+            String text = extractor.extract(new MockMultipartFile(
+                    "file", "plan.pdf", "application/pdf", bytes.toByteArray()));
+            assertTrue(text.contains("[DIAPOSITIVA]"));
+            assertTrue(text.contains("Unidad Algebra"));
         }
     }
 

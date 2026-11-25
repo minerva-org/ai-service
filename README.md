@@ -41,7 +41,7 @@ El servidor escucha en las interfaces del host para aceptar la conexión desde D
 
 `POST /documents/extract`
 
-Requiere `X-AI-Service-Key` y `multipart/form-data` con campo `file`. Acepta PDF y DOCX de hasta 10 MiB y devuelve `units → topics → concepts`. Con Claude, los PDF se envían como documentos nativos (hasta 100 páginas), preservando tablas e imágenes; los DOCX se convierten a texto porque la API no acepta DOCX como documento binario. Ollama recibe texto extraído. El modelo analiza la entrada completa en una sola llamada, no agrega conocimientos externos y la respuesta solo se devuelve si cumple el esquema. Una respuesta truncada o incompleta genera un error; no se reintenta ni se devuelve JSON parcial.
+Requiere `X-AI-Service-Key` y `multipart/form-data` con campo `file`. Acepta PDF, DOCX y PPTX de hasta 10 MiB y devuelve `units → topics → concepts`. Con Claude, los PDF se envían como documentos nativos (hasta 100 páginas), preservando tablas e imágenes; DOCX y PPTX se convierten a texto, incluyendo las tablas de diapositivas. Ollama recibe texto extraído, con límites de diapositiva preservados para PDF y PPTX. El modelo analiza la entrada completa en una sola llamada, no agrega conocimientos externos y la respuesta solo se devuelve si cumple el esquema. Una respuesta truncada o incompleta genera un error; no se reintenta ni se devuelve JSON parcial.
 
 La extracción conserva cada unidad curricular de nivel superior como una unidad independiente y asigna sus temas y conceptos a esa unidad; no agrupa varias unidades bajo una unidad genérica.
 
@@ -66,7 +66,7 @@ La clave de servicio es solo para comunicación backend-a-backend. Los usuarios 
 Requiere `X-AI-Service-Key` y `multipart/form-data` con:
 
 - `request`: JSON `application/json` con el grupo, el árbol temporal completo y las fuentes.
-- `files`: uno o más PDF asociados a las fuentes nuevas.
+- `files`: uno o más PDF o PPTX asociados a las fuentes nuevas.
 
 Ejemplo de `request`:
 
@@ -104,7 +104,7 @@ Los nodos y contenidos agregados por IA incluyen:
 }
 ```
 
-La IA conserva los nodos originales y solo agrega o alimenta contenido. No elimina, desactiva ni reemplaza nodos existentes.
+Las fuentes nuevas pueden ser PDF o presentaciones PPTX. La IA conserva los nodos originales y solo agrega o alimenta contenido. No elimina, desactiva ni reemplaza nodos existentes.
 Al generar cambios, utiliza la ruta curricular completa de cada nodo para asignar temas y conceptos a la unidad correcta, sin mezclar ramas de unidades distintas.
 
 Solo se procesan fuentes que no aparezcan en `fuentesProcesadas`. Si una fuente ya fue procesada, debe volver a subirse para formar parte de una nueva ejecución.

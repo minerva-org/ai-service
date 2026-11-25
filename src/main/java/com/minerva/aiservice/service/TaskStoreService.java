@@ -216,10 +216,16 @@ public class TaskStoreService {
             files.add(new ByteArrayMultipartFile(
                     "files",
                     nombre,
-                    "application/pdf",
+                    contentTypeFor(nombre),
                     content));
         }
         return files.toArray(MultipartFile[]::new);
+    }
+
+    private static String contentTypeFor(String filename) {
+        return filename.toLowerCase(Locale.ROOT).endsWith(".pptx")
+                ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                : "application/pdf";
     }
 
     private void update(

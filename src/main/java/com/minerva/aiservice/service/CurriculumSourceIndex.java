@@ -4,6 +4,7 @@ import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -14,14 +15,11 @@ import java.util.logging.Logger;
 import tools.jackson.databind.JsonNode;
 
 final class CurriculumSourceIndex {
-    private static final int MAX_FRAGMENTS = 8;
-    private static final int MAX_WORDS_PER_FRAGMENT = 220;
+    private static final int MAX_FRAGMENTS = 24;
+    private static final int MAX_WORDS_PER_FRAGMENT = 140;
     /**
-     * Fix 4: umbral de "texto corto". Un texto por debajo de este tamano
-     * no se descarta aunque no coincida con keywords del arbol: se envia
-     * completo al modelo, que decidira si aporta contenido curricular.
-     * Evita que fuentes breves (un parrafo sin encabezado reconocible)
-     * se marquen como "sin texto curricular relevante" sin intentarlo.
+     * Short sources with an identifiable curriculum heading may be retained
+     * even when their wording does not overlap the current tree.
      */
     private static final int SHORT_TEXT_THRESHOLD = 4_000;
     private static final Logger LOGGER =
@@ -36,6 +34,9 @@ final class CurriculumSourceIndex {
         if (text == null || text.isBlank()) {
             return "";
         }
+        if (arbol == null || !arbol.isObject()) {
+            return "";
+        }
 
         List<String> keywords = collectKeywords(arbol);
         List<IndexedFragment> candidates = index(text);
@@ -47,40 +48,61 @@ final class CurriculumSourceIndex {
         }
 
         for (IndexedFragment fragment : candidates) {
-            String normalized = normalize(fragment.text());
-            int score = 0;
-            for (String keyword : keywords) {
-                if (normalized.contains(keyword)) {
-                    score += Math.max(1, keyword.length() / 8);
-                }
-            }
-            if (isHeading(fragment.text())) {
+            int score = score(fragment.text(), keywords);
+            if (score > 0 && isHeading(fragment.text())) {
                 score += 3;
             }
             fragment.score = score;
         }
 
+        List<UnitKeywords> units = collectUnitKeywords(arbol);
+        if (units.isEmpty()) {
+            boolean hasSubjectMatch = candidates.stream()
+                    .anyMatch(fragment -> score(fragment.text(), keywords) > 0);
+            boolean hasCurriculumHeading = candidates.stream()
+                    .anyMatch(fragment -> isHeading(fragment.text()));
+            if (!hasSubjectMatch && !hasCurriculumHeading) {
+                return "";
+            }
+            return formatEvenlySelected(candidates);
+        }
+
         boolean hasRelevantContent = candidates.stream()
                 .anyMatch(fragment -> fragment.score > 0);
         if (!hasRelevantContent) {
-            // Fix 4: si el texto es corto, no lo descartamos. Lo enviamos
-            // completo (acotado por palabras) al modelo. Si es largo y no
-            // hay coincidencias, sigue descartandose para no quemar contexto.
             boolean shortText = text.length() <= SHORT_TEXT_THRESHOLD;
+            boolean hasCurriculumHeading = candidates.stream()
+                    .anyMatch(fragment -> isHeading(fragment.text()));
             LOGGER.log(Level.INFO,
-                    "INDICE_FUENTE: sin coincidencias, textoCorto={0}, caracteresTexto={1}, palabrasClave={2}",
-                    new Object[]{shortText, text.length(), keywords.size()});
-            if (shortText) {
+                    "INDICE_FUENTE: sin coincidencias, textoCorto={0}, encabezadoCurricular={1}, caracteresTexto={2}, palabrasClave={3}",
+                    new Object[]{shortText, hasCurriculumHeading, text.length(), keywords.size()});
+            if (shortText && hasCurriculumHeading) {
                 String limited = limitWords(text, MAX_WORDS_PER_FRAGMENT * 3);
                 LOGGER.log(Level.INFO,
                         "INDICE_FUENTE: fallback texto corto, caracteres={0}",
                         limited.length());
                 return limited;
             }
-            LOGGER.log(Level.WARNING,
-                    "INDICE_FUENTE: candidatos={0}, relevantes=0, textoDescartadoPorLargo, caracteresTexto={1}",
-                    new Object[]{candidates.size(), text.length()});
             return "";
+        }
+
+        LinkedHashMap<IndexedFragment, LinkedHashSet<String>> selected =
+                new LinkedHashMap<>();
+        for (UnitKeywords unit : units) {
+            if (selected.size() >= MAX_FRAGMENTS) {
+                break;
+            }
+            IndexedFragment best = candidates.stream()
+                    .filter(fragment -> score(fragment.text(), unit.keywords()) > 0)
+                    .max(Comparator
+                            .comparingInt((IndexedFragment fragment) ->
+                                    score(fragment.text(), unit.keywords()))
+                            .thenComparingInt(fragment -> -fragment.position))
+                    .orElse(null);
+            if (best != null) {
+                selected.computeIfAbsent(best, ignored -> new LinkedHashSet<>())
+                        .add(unit.name());
+            }
         }
 
         candidates.sort(Comparator
@@ -88,24 +110,91 @@ final class CurriculumSourceIndex {
                 .reversed()
                 .thenComparingInt(fragment -> fragment.position));
 
-        LinkedHashSet<String> selected = new LinkedHashSet<>();
         for (IndexedFragment fragment : candidates) {
             if (selected.size() >= MAX_FRAGMENTS) {
                 break;
             }
-            if (!fragment.text().isBlank()) {
-                selected.add(limitWords(fragment.text(), MAX_WORDS_PER_FRAGMENT));
+            if (fragment.score > 0 && !fragment.text().isBlank()) {
+                selected.putIfAbsent(fragment, new LinkedHashSet<>());
             }
         }
 
         if (selected.isEmpty()) {
             return "";
         }
-        String relevantText = String.join("\n\n", selected);
+        String relevantText = formatSelected(selected);
         LOGGER.log(Level.INFO,
-                "INDICE_FUENTE: candidatos={0}, seleccionados={1}, caracteresSeleccionados={2}, palabrasClave={3}",
-                new Object[]{candidates.size(), selected.size(), relevantText.length(), keywords.size()});
+                "INDICE_FUENTE: candidatos={0}, unidadesCubiertas={1}, seleccionados={2}, caracteresSeleccionados={3}, palabrasClave={4}",
+                new Object[]{candidates.size(),
+                        selected.values().stream().filter(value -> !value.isEmpty()).count(),
+                        selected.size(),
+                        relevantText.length(),
+                        keywords.size()});
         return relevantText;
+    }
+
+    private static int score(String text, List<String> keywords) {
+        String normalized = normalize(text);
+        int score = 0;
+        for (String keyword : keywords) {
+            if (normalized.contains(keyword)) {
+                score += Math.max(1, keyword.length() / 8);
+            }
+        }
+        return score;
+    }
+
+    private static List<UnitKeywords> collectUnitKeywords(JsonNode tree) {
+        List<UnitKeywords> units = new ArrayList<>();
+        JsonNode children = tree.get("hijos");
+        if (children == null || !children.isArray()) {
+            return units;
+        }
+        for (JsonNode child : children) {
+            if ("unidad".equalsIgnoreCase(text(child, "tipo"))) {
+                List<String> keywords = collectKeywords(child);
+                if (!keywords.isEmpty()) {
+                    units.add(new UnitKeywords(text(child, "nombre"), keywords));
+                }
+            }
+        }
+        return units;
+    }
+
+    private static String formatEvenlySelected(List<IndexedFragment> candidates) {
+        if (candidates.isEmpty()) {
+            return "";
+        }
+        LinkedHashMap<IndexedFragment, LinkedHashSet<String>> selected =
+                new LinkedHashMap<>();
+        if (candidates.size() <= MAX_FRAGMENTS) {
+            for (IndexedFragment candidate : candidates) {
+                selected.put(candidate, new LinkedHashSet<>());
+            }
+        } else {
+            for (int i = 0; i < MAX_FRAGMENTS; i++) {
+                int index = i * (candidates.size() - 1) / (MAX_FRAGMENTS - 1);
+                selected.put(candidates.get(index), new LinkedHashSet<>());
+            }
+        }
+        return formatSelected(selected);
+    }
+
+    private static String formatSelected(
+            LinkedHashMap<IndexedFragment, LinkedHashSet<String>> selected) {
+        List<IndexedFragment> inSourceOrder = new ArrayList<>(selected.keySet());
+        inSourceOrder.sort(Comparator.comparingInt(fragment -> fragment.position));
+        List<String> fragments = new ArrayList<>(inSourceOrder.size());
+        for (IndexedFragment fragment : inSourceOrder) {
+            String unitContext = selected.get(fragment).isEmpty()
+                    ? ""
+                    : "Unidad curricular: "
+                            + String.join(", ", selected.get(fragment))
+                            + "\n";
+            fragments.add(unitContext
+                    + limitWords(fragment.text(), MAX_WORDS_PER_FRAGMENT));
+        }
+        return String.join("\n\n", fragments);
     }
 
     private static List<IndexedFragment> index(String text) {
@@ -153,7 +242,7 @@ final class CurriculumSourceIndex {
         if (normalized.length() > 140) {
             return false;
         }
-        return normalized.matches("^(unidad|tema|capitulo|chapter|seccion|section)(\\b|\\d).*")
+        return normalized.matches("^(unidad|tema|capitulo|chapter|seccion|section|escenario|bloque|modulo|parte|diapositiva|pagina|page|contenidos|objetivos)(\\b|\\d).*")
                 || normalized.matches("^\\d+[\\.)].*")
                 || (text.length() < 90
                         && text.endsWith(":")
@@ -228,5 +317,9 @@ final class CurriculumSourceIndex {
         private String text() {
             return text;
         }
+
+    }
+
+    private record UnitKeywords(String name, List<String> keywords) {
     }
 }

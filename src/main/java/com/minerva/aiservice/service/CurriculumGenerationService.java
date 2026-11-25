@@ -42,7 +42,7 @@ public class CurriculumGenerationService {
     private static final int MAX_SOURCE_TEXT_CHARS   = 24_000;
     private static final int MIN_SOURCE_BUDGET_CHARS = 3_000;
 
-    private final PdfTextExtractor pdfTextExtractor;
+    private final DocumentTextExtractor documentTextExtractor;
     private final AiModelClient aiModelClient;
     private final ObjectMapper objectMapper;
 
@@ -110,14 +110,14 @@ public class CurriculumGenerationService {
                         "fallida",
                         0,
                         0,
-                        "No se encontro el archivo PDF asociado a la fuente."));
+                        "No se encontro el archivo asociado a la fuente."));
                 continue;
             }
             unusedFiles.remove(file);
 
             try {
                 progress.accept("Extrayendo texto de " + fuente.nombre());
-                String text = pdfTextExtractor.extract(file);
+                String text = documentTextExtractor.extract(file);
                 if (text == null || text.isBlank()) {
                     sourceResults.add(failedSource(fuente,
                             "La fuente no contiene texto legible."));
@@ -334,13 +334,23 @@ public class CurriculumGenerationService {
                 - Devuelve una sola lista "contenidos" para textos asociados a conceptos existentes.
                 - Devuelve una sola lista "nodos" para unidades, temas o conceptos nuevos.
                 - Cada contenido debe usar "conceptoId" y "descripcion".
-                - Cada nodo nuevo debe usar "tipo", "nombre", "parentId" y opcionalmente "contenido".
-                - "parentId" debe referirse exactamente a un id existente del indice.
+               - Cada nodo nuevo debe usar "tempId", "tipo", "nombre" y "parentId";
+                 "contenido" es opcional.
+               - Asigna a cada nodo nuevo un "tempId" unico (por ejemplo "n1", "n2").
+                 Es una referencia temporal para enlazar nodos dentro de esta respuesta y no
+                 sera el id persistido.
+               - "parentId" debe referirse exactamente al id de un nodo existente o al "tempId"
+                 de otro nodo nuevo de esta misma respuesta.
                 - unidad se agrega bajo la materia; tema bajo una unidad; concepto bajo un tema.
                 - Trata cada unidad como una rama independiente. Identifica la unidad de cada
                   tema y concepto por la ruta del indice y agrega cada nodo bajo el parentId de
-                  su rama; nunca agrupes temas de unidades distintas bajo una sola unidad.
-                - No uses "id" nuevo para relacionar nodos.
+                 su rama; nunca agrupes temas de unidades distintas bajo una sola unidad.
+               - Puedes crear en una sola respuesta unidades, sus temas y los conceptos de cada
+                 tema. Enlaza cada nivel mediante tempId y parentId.
+               - Si agregas una unidad o un tema nuevo, incluye tambien los temas o conceptos
+                 respaldados por la fuente; no dejes ramas nuevas vacias cuando la fuente aporta
+                 contenido para completarlas.
+               - No uses "id" para enlazar nodos nuevos.
                 - No agregues conceptos bajo otros conceptos.
                 - No repitas conceptos, temas o unidades existentes por nombre.
                 - Usa comillas dobles ASCII.
@@ -460,8 +470,9 @@ public class CurriculumGenerationService {
                 Analiza solo las fuentes nuevas.
                 Reparte los temas y conceptos entre las unidades que correspondan por evidencia
                 en la fuente; no combines varias unidades ni sus temas en una sola rama. Para
-                cada nodo nuevo, usa como parentId el id exacto del padre correspondiente segun
-                su nivel en esa ruta.
+                cada nodo nuevo, usa un tempId unico. parentId puede apuntar al id exacto de un
+                nodo del indice o al tempId de otro nodo de esta respuesta. Incluye la rama
+                completa (unidad, temas y conceptos) cuando la fuente permita identificarla.
                 Lista solo contenido nuevo para conceptos existentes usando conceptoId.
                 Emite como maximo 1 elemento en "contenidos" por conceptoId.
                 Revisa todos los conceptos del indice antes de decidir omitir uno.
@@ -632,41 +643,82 @@ public class CurriculumGenerationService {
 
         JsonNode nodos = operations.get("nodos");
         if (nodos != null && nodos.isArray()) {
+            Map<String, JsonNode> nodesByReference = new java.util.LinkedHashMap<>();
+            indexNodeReferences(merged, nodesByReference);
+            List<JsonNode> pendingNodes = new ArrayList<>();
+            Set<String> references = new LinkedHashSet<>(nodesByReference.keySet());
             for (JsonNode item : nodos) {
-                String parentId = text(item, "parentId");
-                String type = text(item, "tipo");
-                String name = text(item, "nombre");
-                JsonNode parent = findNodeById(merged, parentId);
-                if (parent == null || !isValidParentType(parent, type)) {
-                    errors.add("parentId invalido para " + type + ": " + parentId);
-                    continue;
+                String tempId = text(item, "tempId");
+                if (!references.add(tempId)) {
+                    errors.add("tempId duplicado o en conflicto: " + tempId);
                 }
-                if (hasChildWithName(parent, type, name)) {
-                    continue;
-                }
+                pendingNodes.add(item);
+            }
 
-                ObjectNode newNode = objectMapper.createObjectNode();
-                newNode.put("id", "TEMP-" + UUID.randomUUID());
-                newNode.put("tipo", type);
-                newNode.put("nombre", name);
-                newNode.put("origen", "ia");
-                newNode.put("revisionEstado", "pendiente_revision");
-                newNode.put("dirty", true);
-                newNode.putArray("contenido");
-                newNode.putArray("hijos");
-
-                JsonNode contenido = item.get("contenido");
-                if (contenido != null && contenido.isArray()) {
-                    for (JsonNode content : contenido) {
-                        String descripcion = text(content, "descripcion");
-                        if (!descripcion.isBlank()) {
-                            addGeneratedContent(newNode, descripcion, counter);
+            if (errors.isEmpty()) {
+                while (!pendingNodes.isEmpty()) {
+                    boolean resolvedNode = false;
+                    for (int i = 0; i < pendingNodes.size();) {
+                        JsonNode item = pendingNodes.get(i);
+                        String parentId = text(item, "parentId");
+                        String tempId = text(item, "tempId");
+                        String type = text(item, "tipo");
+                        String name = text(item, "nombre");
+                        JsonNode parent = nodesByReference.get(parentId);
+                        if (parent == null) {
+                            i++;
+                            continue;
                         }
+                        if (!(parent instanceof ObjectNode parentObject)
+                                || !isValidParentType(parent, type)) {
+                            errors.add("parentId invalido para " + type + ": " + parentId);
+                            pendingNodes.remove(i);
+                            resolvedNode = true;
+                            continue;
+                        }
+
+                        JsonNode duplicate = findChildByName(parent, type, name);
+                        if (duplicate != null) {
+                            nodesByReference.put(tempId, duplicate);
+                            pendingNodes.remove(i);
+                            resolvedNode = true;
+                            continue;
+                        }
+
+                        ObjectNode newNode = objectMapper.createObjectNode();
+                        newNode.put("id", "TEMP-" + UUID.randomUUID());
+                        newNode.put("tipo", type);
+                        newNode.put("nombre", name);
+                        newNode.put("origen", "ia");
+                        newNode.put("revisionEstado", "pendiente_revision");
+                        newNode.put("dirty", true);
+                        newNode.putArray("contenido");
+                        newNode.putArray("hijos");
+
+                        JsonNode contenido = item.get("contenido");
+                        if (contenido != null && contenido.isArray()) {
+                            for (JsonNode content : contenido) {
+                                String descripcion = text(content, "descripcion");
+                                if (!descripcion.isBlank()) {
+                                    addGeneratedContent(newNode, descripcion, counter);
+                                }
+                            }
+                        }
+
+                        ensureChildren(parentObject).add(newNode);
+                        nodesByReference.put(tempId, newNode);
+                        counter.nodosAgregados++;
+                        pendingNodes.remove(i);
+                        resolvedNode = true;
+                    }
+                    if (!resolvedNode) {
+                        for (JsonNode item : pendingNodes) {
+                            errors.add("parentId no encontrado para " + text(item, "tempId")
+                                    + ": " + text(item, "parentId"));
+                        }
+                        break;
                     }
                 }
-
-                ensureChildren((ObjectNode) parent).add(newNode);
-                counter.nodosAgregados++;
             }
         }
 
@@ -706,18 +758,33 @@ public class CurriculumGenerationService {
                 || ("concepto".equals(childType) && "tema".equals(parentType));
     }
 
-    private boolean hasChildWithName(JsonNode parent, String type, String name) {
+    private JsonNode findChildByName(JsonNode parent, String type, String name) {
         JsonNode children = parent.get("hijos");
         if (children == null || !children.isArray()) {
-            return false;
+            return null;
         }
         for (JsonNode child : children) {
             if (normalizeName(type).equals(normalizeName(text(child, "tipo")))
                     && normalizeName(name).equals(normalizeName(text(child, "nombre")))) {
-                return true;
+                return child;
             }
         }
-        return false;
+        return null;
+    }
+
+    private void indexNodeReferences(
+            JsonNode node,
+            Map<String, JsonNode> references) {
+        String id = text(node, "id");
+        if (!id.isBlank()) {
+            references.putIfAbsent(id, node);
+        }
+        JsonNode children = node.get("hijos");
+        if (children != null && children.isArray()) {
+            for (JsonNode child : children) {
+                indexNodeReferences(child, references);
+            }
+        }
     }
 
     private void addGeneratedContent(

@@ -83,7 +83,9 @@ public class PdfTextExtractor {
             if (document.isEncrypted()) {
                 throw new InvalidPdfException("Encrypted PDFs are not supported.");
             }
-            String text = new PDFTextStripper().getText(document).strip();
+            PDFTextStripper stripper = new PDFTextStripper();
+            stripper.setPageStart("\n[DIAPOSITIVA]\n");
+            String text = stripper.getText(document).strip();
             LOGGER.log(Level.INFO,
                     "EXTRACCION_PDF: pdfs={0}, paginas={1}, caracteresExtraidos={2}",
                     new Object[]{1, document.getNumberOfPages(), text.length()});
